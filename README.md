@@ -3,7 +3,7 @@ Neural Graph Fingerprints
 
 <img src="https://github.com/HIPS/DeepMolecules/blob/master/paper/figures/3d-nets/net1.png" width="300">
 
- For pacakge installation help, https://github.com/HIPS/neural-fingerprint
+ For pacakge installation help, https://github.com/HIPS/neural-fingerprint. Before running the actual code, make sure run python setup.py install first.
 
 The original code for generating fingerprints is in neural-fingerprint/neuralfingerprint/build_convnet.py. On line 96 
 
