@@ -1,4 +1,5 @@
 import autograd.numpy as np
+import numpy
 from autograd.scipy.misc import logsumexp
 
 from features import num_atom_features, num_bond_features
@@ -38,9 +39,8 @@ def weights_name(layer, degree):
 
 def build_convnet_fingerprint_fun(num_hidden_features=[100, 100], fp_length=512,
                                   normalize=True, activation_function=relu,
-                                  return_atom_activations=False):
+                                  return_atom_activations=False, smiles_to_fps={}):
     """Sets up functions to compute convnets over all molecules in a minibatch together."""
-
     # Specify weight shapes.
     parser = WeightsParser()
     all_layer_sizes = [num_atom_features()] + num_hidden_features
@@ -93,6 +93,14 @@ def build_convnet_fingerprint_fun(num_hidden_features=[100, 100], fp_length=512,
             atom_features = update_layer(weights, layer, atom_features, bond_features, array_rep,
                                          normalize=normalize)
         write_to_fingerprint(atom_features, num_layers)
+
+        for smile, fingerprint in zip(smiles, sum(all_layer_fps)):
+            # if smile not in smiles_to_fps:
+            if type(fingerprint[0]) == np.numpy_boxes.ArrayBox:
+                smiles_to_fps[smile] = fingerprint._value.tolist()
+            else:
+                smiles_to_fps[smile] = fingerprint.tolist()
+
         return sum(all_layer_fps), atom_activations, array_rep
 
     def output_layer_fun(weights, smiles):
