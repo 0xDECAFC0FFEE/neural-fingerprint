@@ -98,7 +98,11 @@ def main():
             train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
                      train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
     
-        with open("smiles_fingerprints.csv", "w+") as smiles_fps_file:
+        fingerprint_filename = task_params['data_file']
+        extension_index = fingerprint_filename.index(".")
+        fingerprint_filename = fingerprint_filename[:extension_index] + "_fingerprints" + fingerprint_filename[extension_index:]
+
+        with open(fingerprint_filename, "w+") as smiles_fps_file:
             writer = csv.writer(smiles_fps_file, lineterminator='\n')
 
             all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
