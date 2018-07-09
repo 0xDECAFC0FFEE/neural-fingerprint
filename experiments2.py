@@ -50,11 +50,10 @@ def classify_evaluate(dataset, classifier, folds):
 
 	test_accuracy = sum(scores["test_score"])/len(scores["test_score"])
 	train_accuracy = sum(scores["train_score"]) / len(scores["train_score"])
-
-	return (test_accuracy, train_accuracy)
+        dist = scores["test_score"]
+	return (test_accuracy, train_accuracy, dist)
 
 def log_experiment(results, filename):
-	
 	with open(filename, "a+") as log_file:
 		pass
 	with open(filename, "r+b") as log_file:
@@ -93,16 +92,16 @@ def experiment(dataset, classifier_type, classifier_inputs, folds):
 		classifier_argument["random_state"] = random.randint(0, 9999)
 		arguments.append(classifier_argument)
 		
-	Result = namedtuple("Result", ["accuracy", "train_acc", "classifier", "args"])
+	Result = namedtuple("Result", ["accuracy", "train_acc", "classifier", "distribution", "args"])
 	results = []
 	for argument in tqdm(arguments):
 		classifier = classifier_type(**(argument))
 
-		test_acc, train_acc = classify_evaluate(dataset, classifier, folds)
-		result = {"accuracy": test_acc, "train_acc": train_acc, "classifier": classifier_type.__name__}
+		test_acc, train_acc, dist = classify_evaluate(dataset, classifier, folds)
+		result = {"accuracy": test_acc, "train_acc": train_acc, "classifier": classifier_type.__name__, "distribution": np.array(dist)}
 		result.update(**argument)
 		results.append(result)
-	
+                
 	return results
 
 def mlp_experiment(dataset):
@@ -123,7 +122,31 @@ def mlp_experiment(dataset):
 		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
 	return results
 	
-
+def logreg_experiment(dataset):
+        classifier = LogisticRegression
+	
+	classifier_inputs_list = [{
+		"solver": ['liblinear'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['newton-cg'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['lbfgs'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['sag'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['saga'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	}]
+	folds =10
+	results = []
+	for classifier_inputs in classifier_inputs_list:
+		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+	return results
+	
 def svm_experiment(dataset):
 	classifier = SVC
 	folds = 10
@@ -172,7 +195,7 @@ if __name__ == "__main__":
 	test_inputs,  test_targets  = testdata
 	dataset = (train_inputs, train_targets)
 	results = mlp_experiment(dataset)
-	# results = svm_experiment(dataset)
-
-	log_experiment(results, "MLP_pred_evaluation.csv")
+	log_experiment(results, "mlp_pred.csv")
+	results = logreg_experiment(dataset)
+	log_experiment(results, "logreg_pred.csv")
 	print("max: %s" % (max([(res["accuracy"], res) for res in results])[1],))
