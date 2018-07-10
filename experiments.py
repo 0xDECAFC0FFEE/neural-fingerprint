@@ -42,7 +42,13 @@ def interpret_score(pred_y, test_y):
         "TN": TN,
         "FP": FP,
         "FN": FN,
+        "MCC": your mcc value
     }
+
+def my_function(arguments, classifier_type, dataset)
+
+def your_function(arguments, classifier_type, dataset)
+
 
 def cv_layer_2(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
@@ -55,10 +61,16 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
         for argument in arguments:
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
-            classifier = classifier_type(**argument)
-            classifier.fit(train_X, train_y)
-            pred_y = classifier.predict_proba(test_X)
-            score = interpret_score(pred_y, test_y)["accuracy"]
+            
+            sub_dataset = train_X, train_Y
+
+            scores = your_function(arguments, classifier_type, sub_dataset)
+            
+            
+            # classifier = classifier_type(**argument)
+            # classifier.fit(train_X, train_y)
+            # pred_y = classifier.predict_proba(test_X)
+            # score = interpret_score(pred_y, test_y)["accuracy"]
 
             if max_score == None:
                 max_score, max_arg = (score, argument)
