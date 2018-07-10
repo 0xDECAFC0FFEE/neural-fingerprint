@@ -57,7 +57,7 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             argument["random_state"] = random.randint(0, 9999999)
             classifier = classifier_type(**argument)
             classifier.fit(train_X, train_y)
-            pred_y = classifier.predict(test_X)
+            pred_y = classifier.predict_proba(test_X)
             score = interpret_score(pred_y, test_y)["accuracy"]
 
             if max_score == None:
@@ -82,7 +82,7 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
 
         classifier = classifier_type(**best_arg)
         classifier.fit(train_X, train_y)
-        pred_y = classifier.predict(test_X)
+        pred_y = classifier.predict_proba(test_X)
         score = interpret_score(pred_y, test_y)
 
         argument_scores.append(copy.deepcopy((best_arg, score)))
@@ -195,6 +195,16 @@ def svm_experiment(dataset, output_log):
         results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
 
+def lxr_experiment():
+    input_filename = "lxr_nobkg_fingerprints.csv"
+    output_filename = "lxr_nobkg_results.csv"
+    column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
+
+    dataset = import_data(input_filename, column_names)
+
+    random_forest_experiment(dataset, output_filename)
+    # svm_experiment(dataset, output_filename)
+
 def smi_to_csv(pos_file, neg_file, output_file):
     data = []
 
@@ -211,16 +221,6 @@ def smi_to_csv(pos_file, neg_file, output_file):
         csv_writer = csv.DictWriter(output_handle, header, "")
         csv_writer.writeheader()
         csv_writer.writerows(data)
-
-def lxr_experiment():
-    input_filename = "lxr_nobkg_fingerprints.csv"
-    output_filename = "lxr_nobkg_results.csv"
-    column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
-
-    dataset = import_data(input_filename, column_names)
-
-    random_forest_experiment(dataset, output_filename)
-    # svm_experiment(dataset, output_filename)
 
 def make_folder(foldername):
     import os
@@ -249,12 +249,13 @@ def remove_unkekulizable(csv_file):
     
     with open(csv_file, "w+") as file:
         writer = csv.DictWriter(file, headers, "")
+        writer.writeheader()
         for row in data:
             writer.writerow(row)
 
-
 def dud_experiment():
     dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
+    dud_datasets = ["ace", "ada", "alr2", "ampc", "ar", "hmga"]
 
     dud_raw_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset)
         for dataset in dud_datasets]
@@ -303,5 +304,5 @@ def dud_experiment():
         # svm_experiment(dataset, result_filename)
 
 if __name__ == "__main__":
-    lxr_experiment()	
-    # dud_experiment()
+    # lxr_experiment()	
+    dud_experiment()
