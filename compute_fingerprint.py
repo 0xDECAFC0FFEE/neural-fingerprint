@@ -19,7 +19,7 @@ from autograd import grad
 # N_test = 20
 
 task_params = {'target_name': 'LXRbeta binder',
-               'data_file': 'lxr_nobkg.csv'}
+               'data_file': 'dud/ace_actives.smi'}
 N_train = 131
 N_val   = 10
 N_test  = 0
@@ -75,7 +75,8 @@ def train_nn(pred_fun, loss_fun, num_weights, train_smiles, train_raw_targets, t
     return predict_func, trained_weights, training_curve
 
 
-def main():
+def main(task_params, train_val_test_split, output_filename):
+    N_train, N_val, N_test = train_val_test_split
     print "Loading data..."
     traindata, valdata, testdata = load_data(
         task_params['data_file'], (N_train, N_val, N_test),
@@ -97,19 +98,19 @@ def main():
         predict_func, trained_weights, conv_training_curve = \
             train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
                      train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
-    
-        fingerprint_filename = task_params['data_file']
-        extension_index = fingerprint_filename.index(".")
-        fingerprint_filename = fingerprint_filename[:extension_index] + "_fingerprints" + fingerprint_filename[extension_index:]
 
-        with open(fingerprint_filename, "w+") as smiles_fps_file:
+        with open(output_filename, "w+") as smiles_fps_file:
             writer = csv.writer(smiles_fps_file, lineterminator='\n')
 
             all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
             all_targets = list(train_targets) + list(val_targets) + list(test_targets)
 
             file = [["smiles", "fingerprints", task_params['target_name']]]
-            file = file + [[smiley, smiles_to_fps[smiley], target] for smiley, target in sorted(zip(all_inputs, all_targets))]
+            for smile, target in sorted(zip(all_inputs, all_targets)):
+                try:
+                    file.append([smile, smiles_to_fps[smile], target])
+                except:
+                    print("skipping smile %s in fingerprint computation" % smile)
             
             for line in file:
                 writer.writerow(line)
@@ -117,4 +118,5 @@ def main():
     run_conv_experiment()
 
 if __name__ == '__main__':
-    main()
+    smi_to_csv("dud/ace_actives.smi", "dud/ace_background.smi")
+    main(task_params, N_train, N_val, N_test)

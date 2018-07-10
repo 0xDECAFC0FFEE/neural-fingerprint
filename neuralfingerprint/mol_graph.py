@@ -1,4 +1,5 @@
 import numpy as np
+import rdkit.Chem as Chem
 from rdkit.Chem import MolFromSmiles
 from features import atom_features, bond_features
 
@@ -63,7 +64,13 @@ class Node(object):
         return [n for n in self._neighbors if n.ntype == ntype]
 
 def graph_from_smiles_tuple(smiles_tuple):
-    graph_list = [graph_from_smiles(s) for s in smiles_tuple]
+    graph_list = []
+    for s in smiles_tuple:
+        try:
+            graph_list.append(graph_from_smiles(s))
+        except:
+            print(s)
+    # graph_list = [graph_from_smiles(s) for s in smiles_tuple]
     big_graph = MolGraph()
     for subgraph in graph_list:
         big_graph.add_subgraph(subgraph)
@@ -75,6 +82,10 @@ def graph_from_smiles_tuple(smiles_tuple):
 def graph_from_smiles(smiles):
     graph = MolGraph()
     mol = MolFromSmiles(smiles)
+
+    # mol = MolFromSmiles(smiles, sanitize=False)
+    # mol.UpdatePropertyCache(strict=False)
+    # Chem.SanitizeMol(mol, Chem.SanitizeFlags.SANITIZE_FINDRADICALS | Chem.SanitizeFlags.SANITIZE_KEKULIZE | Chem.SanitizeFlags.SANITIZE_SETAROMATICITY | Chem.SanitizeFlags.SANITIZE_SETCONJUGATION | Chem.SanitizeFlags.SANITIZE_SETHYBRIDIZATION | Chem.SanitizeFlags.SANITIZE_SYMMRINGS, catchErrors=True)
     if not mol:
         raise ValueError("Could not parse SMILES string:", smiles)
     atoms_by_rd_idx = {}
