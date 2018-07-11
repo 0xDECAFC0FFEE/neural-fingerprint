@@ -54,7 +54,7 @@ def interpret_score(pred_y_proba, test_y):
         "log_loss": weighted_log_loss
     }
 
-<<<<<<< HEAD
+
 
 def sampling(arguments, classifier_type, dataset):
 	pos_train_X = []
@@ -103,7 +103,7 @@ def sampling(arguments, classifier_type, dataset):
 	return result
 			
 			
-=======
+
 def fit_score_classifier(arguments, classifier_type, dataset):
     fingerprints, targets = dataset
     
@@ -113,42 +113,6 @@ def fit_score_classifier(arguments, classifier_type, dataset):
     score = interpret_score(pred_y, test_y)
     
     return score
->>>>>>> c4dd7b6a004bcfc5bafa50f2f4fdb91f6f184eec
-
-def sampling(arguments, classifier_type, dataset):
-    pos_train_X = []
-    pos_train_Y = []
-    neg_train_X = []
-    neg_train_Y = []
-            
-    for fingerprint, target in zip(dataset[0], dataset[1]):
-        if target == 1:
-            pos_train_X.append(fingerprint)
-            pos_train_Y.append(target)
-        else:
-            neg_train_X.append(fingerprint)
-            neg_train_Y.append(target)
-            
-    stop = 0
-    step = len(pos_train_X)
-    length = len(neg_train_X)
-    results = []
-    for i in range (length/step):
-        train_sample = pos_train_X + neg_train_X, pos_train_Y[stop:stop + step] + neg_train_Y[stop:stop + step]
-        stop = stop + step
-        results.append(fit_score_classifier(arguments, classifier_type, train_sample))
-        
-    result = results[0]
-    count = 0
-
-    for r in range(1,len(results)):
-        for k in results[r]:
-            result[k]+=results[r][k]
-            count += 1
-    for k in result:
-        result[k] /= count 
-    
-    return result
 
 def cv_layer_2(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
