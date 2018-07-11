@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import log_loss
 from itertools import product
 from rdkit.Chem import MolFromSmiles
 from tqdm import tqdm
@@ -30,22 +31,39 @@ def import_data(csv_filename, column_names):
 
         return (fingerprints, targets)
 
-def interpret_score(pred_y, test_y):
-    TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
-    FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
-    TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
-    FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
-    accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+def interpret_score(pred_y_proba, test_y):
+# weighted log loss function(aka cross entropy loss) pos weigh more than neg
+# f score
+# skip mcc
+
+
+
+    # TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
+    # FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
+    # TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
+    # FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
+    # accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+    # mcc = matthews_corrcoef(test_y, pred_y)
+    weighted_log_loss = log_loss(test_y, pred_y_proba, )
+    f_score = 
     return {
-        "accuracy": accuracy, 
-        "TP": TP,
-        "TN": TN,
-        "FP": FP,
-        "FN": FN,
-        "MCC": your mcc value
+        # "accuracy": accuracy, 
+        # "TP": TP,
+        # "TN": TN,
+        # "FP": FP,
+        # "FN": FN,
+        # "MCC": 
     }
 
-def my_function(arguments, classifier_type, dataset)
+def my_function(arguments, classifier_type, dataset):
+    fingerprints, targets = dataset
+    
+    classifier = classifier_type(**argument)
+    classifier.fit(train_X, train_y)
+    pred_y = classifier.predict_proba(test_X)
+    score = interpret_score(pred_y, test_y)
+    
+    return score
 
 def your_function(arguments, classifier_type, dataset)
 
@@ -64,7 +82,7 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             
             sub_dataset = train_X, train_Y
 
-            scores = your_function(arguments, classifier_type, sub_dataset)
+            score = your_function(arguments, classifier_type, sub_dataset)
             
             
             # classifier = classifier_type(**argument)
@@ -73,9 +91,9 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             # score = interpret_score(pred_y, test_y)["accuracy"]
 
             if max_score == None:
-                max_score, max_arg = (score, argument)
-            elif max_score <= score:
-                max_score, max_arg = (score, argument)
+                max_score, max_arg = (score["accuracy"], argument)
+            elif max_score <= score["accuracy"]:
+                max_score, max_arg = (score["accuracy"], argument)
     return max_arg
 
 
