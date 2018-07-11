@@ -5,6 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import log_loss
 from itertools import product
 from rdkit.Chem import MolFromSmiles
 from tqdm import tqdm
@@ -30,23 +31,31 @@ def import_data(csv_filename, column_names):
 
         return (fingerprints, targets)
 
-def interpret_score(pred_y, test_y):
-    TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
-    FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
-    TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
-    FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
-    accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+def interpret_score(pred_y_proba, test_y):
+# weighted log loss function(aka cross entropy loss) pos weigh more than neg
+# f score
+# skip mcc
+
+    # TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
+    # FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
+    # TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
+    # FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
+    # accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+    # mcc = matthews_corrcoef(test_y, pred_y)
+    weighted_log_loss = log_loss(test_y, pred_y_proba)
+    # f_score = 
     return {
-        "accuracy": accuracy, 
-        "TP": TP,
-        "TN": TN,
-        "FP": FP,
-        "FN": FN,
-        "MCC": mcc
+        # "accuracy": accuracy,
+        # "TP": TP,
+        # "TN": TN,
+        # "FP": FP,
+        # "FN": FN,
+        # "MCC":
+        "log_loss": weighted_log_loss
     }
 
-def my_function(arguments, classifier_type, dataset):
-	return results
+<<<<<<< HEAD
+
 def sampling(arguments, classifier_type, dataset):
 	pos_train_X = []
 	pos_train_Y = []
@@ -69,17 +78,17 @@ def sampling(arguments, classifier_type, dataset):
 		for i in range (neg/pos):
 			train_sample = pos_train_X + neg_train_X[stop:stop + pos], pos_train_Y + neg_train_Y[stop:stop + pos]
 			stop = stop + pos
-			results.append(my_function(arguments, classifier_type, train_sample))
+			results.append(fit_score_classifier(arguments, classifier_type, train_sample))
 	elif pos/neg >= 2:
 		stop = 0
 		results = []
 		for i in range (pos/neg):
 			train_sample = pos_train_X[stop:stop + neg] + neg_train_X, pos_train_Y[stop:stop + neg] + neg_train_Y
 			stop = stop + neg
-			results.append(my_function(arguments, classifier_type, train_sample))
+			results.append(fit_score_classifier(arguments, classifier_type, train_sample))
 	
 	else:
-		return my_function(arguments, classifier_type, dataset)
+		return fit_score_classifier(arguments, classifier_type, dataset)
 		
 	result = results[0]
 	count = 1
@@ -94,7 +103,52 @@ def sampling(arguments, classifier_type, dataset):
 	return result
 			
 			
+=======
+def fit_score_classifier(arguments, classifier_type, dataset):
+    fingerprints, targets = dataset
+    
+    classifier = classifier_type(**argument)
+    classifier.fit(train_X, train_y)
+    pred_y = classifier.predict_proba(test_X)
+    score = interpret_score(pred_y, test_y)
+    
+    return score
+>>>>>>> c4dd7b6a004bcfc5bafa50f2f4fdb91f6f184eec
 
+def sampling(arguments, classifier_type, dataset):
+    pos_train_X = []
+    pos_train_Y = []
+    neg_train_X = []
+    neg_train_Y = []
+            
+    for fingerprint, target in zip(dataset[0], dataset[1]):
+        if target == 1:
+            pos_train_X.append(fingerprint)
+            pos_train_Y.append(target)
+        else:
+            neg_train_X.append(fingerprint)
+            neg_train_Y.append(target)
+            
+    stop = 0
+    step = len(pos_train_X)
+    length = len(neg_train_X)
+    results = []
+    for i in range (length/step):
+        train_sample = pos_train_X + neg_train_X, pos_train_Y[stop:stop + step] + neg_train_Y[stop:stop + step]
+        stop = stop + step
+        results.append(fit_score_classifier(arguments, classifier_type, train_sample))
+        
+    result = results[0]
+    count = 0
+
+    for r in range(1,len(results)):
+        for k in results[r]:
+            result[k]+=results[r][k]
+            count += 1
+    for k in result:
+        result[k] /= count 
+    
+    return result
 
 def cv_layer_2(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
@@ -108,20 +162,16 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
             
-            sub_dataset = train_X, train_Y
-
-            scores = your_function(arguments, classifier_type, sub_dataset)
-            
-            
-            # classifier = classifier_type(**argument)
-            # classifier.fit(train_X, train_y)
-            # pred_y = classifier.predict_proba(test_X)
-            # score = interpret_score(pred_y, test_y)["accuracy"]
+            dataset_layer_3 = train_X, train_y
+            score = sampling(arguments, classifier_type, dataset_layer_3)
 
             if max_score == None:
-                max_score, max_arg = (score, argument)
-            elif max_score <= score:
-                max_score, max_arg = (score, argument)
+                max_score, max_arg = (score["accuracy"], argument)
+            elif "n_estimators" in max_arg and "max_depth" in max_arg:
+                if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
+                    max_score, max_arg = (score, argument)
+            elif max_score <= score["accuracy"]:
+                max_score, max_arg = (score["accuracy"], argument)
     return max_arg
 
 
@@ -404,5 +454,5 @@ def dud_experiment():
         # svm_experiment(dataset, result_filename)
 
 if __name__ == "__main__":
-    # lxr_experiment()	
-    dud_experiment()
+    lxr_experiment()    
+    # dud_experiment()
