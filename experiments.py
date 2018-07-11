@@ -36,27 +36,26 @@ def interpret_score(pred_y_proba, test_y):
 # f score
 # skip mcc
 
-
-
     # TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
     # FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
     # TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
     # FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
     # accuracy = float(TP+TN) / float(TP+FP+TN+FN)
     # mcc = matthews_corrcoef(test_y, pred_y)
-    weighted_log_loss = log_loss(test_y, pred_y_proba, )
-    f_score = 
+    weighted_log_loss = log_loss(test_y, pred_y_proba)
+    # f_score = 
     return {
-        # "accuracy": accuracy, 
+        # "accuracy": accuracy,
         # "TP": TP,
         # "TN": TN,
         # "FP": FP,
         # "FN": FN,
-        # "MCC": 
+        # "MCC":
+        "log_loss": weighted_log_loss
     }
 
-def my_function(arguments, classifier_type, dataset):
-    fingerprints, targets = dataset
+def fit_score_classifier(arguments, classifier_type, dataset):
+	fingerprints, targets = dataset
     
     classifier = classifier_type(**argument)
     classifier.fit(train_X, train_y)
@@ -65,8 +64,40 @@ def my_function(arguments, classifier_type, dataset):
     
     return score
 
-def your_function(arguments, classifier_type, dataset)
+def sampling(arguments, classifier_type, dataset):
+	pos_train_X = []
+	pos_train_Y = []
+	neg_train_X = []
+	neg_train_Y = []
+			
+	for fingerprint, target in zip(dataset[0], dataset[1]):
+		if target == 1:
+			pos_train_X.append(fingerprint)
+			pos_train_Y.append(target)
+		else:
+			neg_train_X.append(fingerprint)
+			neg_train_Y.append(target)
+			
+	stop = 0
+	step = len(pos_train_X)
+	length = len(neg_train_X)
+	results = []
+	for i in range (length/step):
+		train_sample = pos_train_X + neg_train_X, pos_train_Y[stop:stop + step] + neg_train_Y[stop:stop + step]
+		stop = stop + step
+		results.append(fit_score_classifier(arguments, classifier_type, train_sample))
+		
+	result = results[0]
+	count = 0
 
+	for r in range(1,len(results)):
+		for k in results[r]:
+			result[k]+=results[r][k]
+			count += 1
+	for k in result:
+		result[k] /= count 
+	
+	return result
 
 def cv_layer_2(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
@@ -80,15 +111,8 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
             
-            sub_dataset = train_X, train_Y
-
-            score = your_function(arguments, classifier_type, sub_dataset)
-            
-            
-            # classifier = classifier_type(**argument)
-            # classifier.fit(train_X, train_y)
-            # pred_y = classifier.predict_proba(test_X)
-            # score = interpret_score(pred_y, test_y)["accuracy"]
+            dataset_layer_3 = train_X, train_Y
+            score = sampling(arguments, classifier_type, dataset_layer_3)
 
             if max_score == None:
                 max_score, max_arg = (score["accuracy"], argument)
