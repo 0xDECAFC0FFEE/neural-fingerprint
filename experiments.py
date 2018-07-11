@@ -251,7 +251,49 @@ def svm_experiment(dataset, output_log):
     for classifier_inputs in classifier_inputs_list:
         results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
-
+def mlp_experiment(dataset):
+	classifier = MLPClassifier
+	classifier_inputs_list = [{
+                "solver": ['lbfgs'],
+		"hidden_layer_sizes": range(10, 101, 10)
+	},{
+                "solver": ['adam'],
+		"hidden_layer_sizes": range(10, 101, 10)
+	},{
+                "solver": ['sgd'],
+		"hidden_layer_sizes": range(10, 101, 10)
+	}]
+	folds = 10
+	results = []
+	for classifier_inputs in classifier_inputs_list:
+		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+	return results
+	
+def logreg_experiment(dataset):
+        classifier = LogisticRegression
+	
+	classifier_inputs_list = [{
+		"solver": ['liblinear'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['newton-cg'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['lbfgs'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['sag'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	},{
+		"solver": ['saga'],
+		"C": [.3, .5, .6, .7, .9, 1]
+	}]
+	folds =10
+	results = []
+	for classifier_inputs in classifier_inputs_list:
+		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+	return results
+	
 def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
     output_filename = "lxr_nobkg_results.csv"
