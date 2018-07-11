@@ -61,18 +61,28 @@ def sampling(arguments, classifier_type, dataset):
 		else:
 			neg_train_X.append(fingerprint)
 			neg_train_Y.append(target)
-			
-	stop = 0
-	step = len(pos_train_X)
-	length = len(neg_train_X)
-	results = []
-	for i in range (length/step):
-		train_sample = pos_train_X + neg_train_X, pos_train_Y[stop:stop + step] + neg_train_Y[stop:stop + step]
-		stop = stop + step
-		results.append(my_function(arguments, classifier_type, train_sample))
+	pos = len(pos_train_X)
+	neg = len(neg_train_X)
+	if neg/pos >= 2:
+		stop = 0
+		results = []
+		for i in range (neg/pos):
+			train_sample = pos_train_X + neg_train_X[stop:stop + pos], pos_train_Y + neg_train_Y[stop:stop + pos]
+			stop = stop + pos
+			results.append(my_function(arguments, classifier_type, train_sample))
+	elif pos/neg >= 2:
+		stop = 0
+		results = []
+		for i in range (pos/neg):
+			train_sample = pos_train_X[stop:stop + neg] + neg_train_X, pos_train_Y[stop:stop + neg] + neg_train_Y
+			stop = stop + neg
+			results.append(my_function(arguments, classifier_type, train_sample))
+	
+	else:
+		return my_function(arguments, classifier_type, dataset)
 		
 	result = results[0]
-	count = 0
+	count = 1
 	
 	for r in range(1,len(results)):
 		for k in results[r]:
