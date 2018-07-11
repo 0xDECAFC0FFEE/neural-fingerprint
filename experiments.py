@@ -5,7 +5,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, matthews_corrcoef
 from itertools import product
 from rdkit.Chem import MolFromSmiles
 from tqdm import tqdm
@@ -31,86 +31,101 @@ def import_data(csv_filename, column_names):
 
         return (fingerprints, targets)
 
-def interpret_score(pred_y_proba, test_y):
+def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None):
+    if pred_y == None:
+        pred_y = [max([(index, i) for i, index in enumerate(probs)])[1] for probs in pred_y_proba]
+
 # weighted log loss function(aka cross entropy loss) pos weigh more than neg
 # f score
 # skip mcc
 
-    # TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
-    # FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
-    # TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
-    # FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
-    # accuracy = float(TP+TN) / float(TP+FP+TN+FN)
-    # mcc = matthews_corrcoef(test_y, pred_y)
-    weighted_log_loss = log_loss(test_y, pred_y_proba)
+    TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
+    FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
+    TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
+    FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
+    accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+    mcc = matthews_corrcoef(test_y, pred_y)
+    
+    if validation_weights != None:
+        weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
+    else:
+        weighted_log_loss = log_loss(test_y, pred_y_proba)
     # f_score = 
     return {
-        # "accuracy": accuracy,
-        # "TP": TP,
-        # "TN": TN,
-        # "FP": FP,
-        # "FN": FN,
-        # "MCC":
+        "accuracy": accuracy,
+        "TP": TP,
+        "TN": TN,
+        "FP": FP,
+        "FN": FN,
+        "MCC": mcc,
         "log_loss": weighted_log_loss
     }
 
 
 
 def sampling(arguments, classifier_type, dataset):
-	pos_train_X = []
-	pos_train_Y = []
-	neg_train_X = []
-	neg_train_Y = []
+    pos_train_X = []
+    pos_train_Y = []
+    neg_train_X = []
+    neg_train_Y = []
 
-			
-	for fingerprint, target in zip(dataset[0], dataset[1]):
-		if target == 1:
-			pos_train_X.append(fingerprint)
-			pos_train_Y.append(target)
-		else:
-			neg_train_X.append(fingerprint)
-			neg_train_Y.append(target)
-	pos = len(pos_train_X)
-	neg = len(neg_train_X)
-	if neg/pos >= 2:
-		stop = 0
-		results = []
-		for i in range (neg/pos):
-			train_sample = pos_train_X + neg_train_X[stop:stop + pos], pos_train_Y + neg_train_Y[stop:stop + pos]
-			stop = stop + pos
-			results.append(fit_score_classifier(arguments, classifier_type, train_sample))
-	elif pos/neg >= 2:
-		stop = 0
-		results = []
-		for i in range (pos/neg):
-			train_sample = pos_train_X[stop:stop + neg] + neg_train_X, pos_train_Y[stop:stop + neg] + neg_train_Y
-			stop = stop + neg
-			results.append(fit_score_classifier(arguments, classifier_type, train_sample))
-	
-	else:
-		return fit_score_classifier(arguments, classifier_type, dataset)
-		
-	result = results[0]
-	count = 1
-	
-	for r in range(1,len(results)):
-		for k in results[r]:
-			result[k]+=results[r][k]
-			count += 1
-	for k in result:
-		result[k] /= count 
-	
-	return result
-			
-			
+    training_dataset, validation_dataset = dataset
+    test_y = validation_dataset[1]
+    num_pos_val = sum(test_y)
+    num_neg_val = len(test_y) - num_pos_val
+    pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val), 1
 
-def fit_score_classifier(arguments, classifier_type, dataset):
-    fingerprints, targets = dataset
+    validation_weights = [pos_weight if i == 1 else neg_weight for i in test_y]
+
+    for fingerprint, target in zip(training_dataset[0], training_dataset[1]):
+        if target == 1:
+            pos_train_X.append(fingerprint)
+            pos_train_Y.append(target)
+        else:
+            neg_train_X.append(fingerprint)
+            neg_train_Y.append(target)
+    pos = len(pos_train_X)
+    neg = len(neg_train_X)
+    if neg/pos >= 2:
+        stop = 0
+        results = []
+        for i in range (neg/pos):
+            train_sample = pos_train_X + neg_train_X[stop:stop + pos], pos_train_Y + neg_train_Y[stop:stop + pos]
+            stop = stop + pos
+            dataset = (train_sample, validation_dataset)
+            results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
+    elif pos/neg >= 2:
+        stop = 0
+        results = []
+        for i in range (pos/neg):
+            train_sample = pos_train_X[stop:stop + neg] + neg_train_X, pos_train_Y[stop:stop + neg] + neg_train_Y
+            stop = stop + neg
+            dataset = (train_sample, validation_dataset)
+            results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
     
-    classifier = classifier_type(**argument)
+    else:
+        dataset = (training_dataset, validation_dataset)
+        return fit_score_classifier(arguments, classifier_type, dataset, validation_weights)
+        
+    result = results[0]
+    count = 1
+    
+    for r in range(1,len(results)):
+        for k in results[r]:
+            result[k]+=results[r][k]
+            count += 1
+    for k in result:
+        result[k] /= count 
+    
+    return result
+
+def fit_score_classifier(arguments, classifier_type, dataset, validation_weights):
+    ((train_X, train_y), (test_X, test_y)) = dataset
+    
+    classifier = classifier_type(**arguments)
     classifier.fit(train_X, train_y)
     pred_y = classifier.predict_proba(test_X)
-    score = interpret_score(pred_y, test_y)
+    score = interpret_score(pred_y, test_y, validation_weights=validation_weights)
     
     return score
 
@@ -126,16 +141,16 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
             
-            dataset_layer_3 = train_X, train_y
-            score = sampling(arguments, classifier_type, dataset_layer_3)
+            train_val_dataset = ((train_X, train_y), (test_X, test_y))
+            score = sampling(argument, classifier_type, train_val_dataset)
 
             if max_score == None:
-                max_score, max_arg = (score["accuracy"], argument)
+                max_score, max_arg = (score["log_loss"], argument)
             elif "n_estimators" in max_arg and "max_depth" in max_arg:
                 if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
                     max_score, max_arg = (score, argument)
-            elif max_score <= score["accuracy"]:
-                max_score, max_arg = (score["accuracy"], argument)
+            elif max_score <= score["log_loss"]:
+                max_score, max_arg = (score["log_loss"], argument)
     return max_arg
 
 
@@ -267,48 +282,48 @@ def svm_experiment(dataset, output_log):
         results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
 def mlp_experiment(dataset):
-	classifier = MLPClassifier
-	classifier_inputs_list = [{
+    classifier = MLPClassifier
+    classifier_inputs_list = [{
                 "solver": ['lbfgs'],
-		"hidden_layer_sizes": range(10, 101, 10)
-	},{
+        "hidden_layer_sizes": range(10, 101, 10)
+    },{
                 "solver": ['adam'],
-		"hidden_layer_sizes": range(10, 101, 10)
-	},{
+        "hidden_layer_sizes": range(10, 101, 10)
+    },{
                 "solver": ['sgd'],
-		"hidden_layer_sizes": range(10, 101, 10)
-	}]
-	folds = 10
-	results = []
-	for classifier_inputs in classifier_inputs_list:
-		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
-	return results
-	
+        "hidden_layer_sizes": range(10, 101, 10)
+    }]
+    folds = 10
+    results = []
+    for classifier_inputs in classifier_inputs_list:
+        results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+    return results
+    
 def logreg_experiment(dataset):
-        classifier = LogisticRegression
-	
-	classifier_inputs_list = [{
-		"solver": ['liblinear'],
-		"C": [.3, .5, .6, .7, .9, 1]
-	},{
-		"solver": ['newton-cg'],
-		"C": [.3, .5, .6, .7, .9, 1]
-	},{
-		"solver": ['lbfgs'],
-		"C": [.3, .5, .6, .7, .9, 1]
-	},{
-		"solver": ['sag'],
-		"C": [.3, .5, .6, .7, .9, 1]
-	},{
-		"solver": ['saga'],
-		"C": [.3, .5, .6, .7, .9, 1]
-	}]
-	folds =10
-	results = []
-	for classifier_inputs in classifier_inputs_list:
-		results.extend(experiment(dataset, classifier, classifier_inputs, folds))
-	return results
-	
+    classifier = LogisticRegression
+    
+    classifier_inputs_list = [{
+        "solver": ['liblinear'],
+        "C": [.3, .5, .6, .7, .9, 1]
+    },{
+        "solver": ['newton-cg'],
+        "C": [.3, .5, .6, .7, .9, 1]
+    },{
+        "solver": ['lbfgs'],
+        "C": [.3, .5, .6, .7, .9, 1]
+    },{
+        "solver": ['sag'],
+        "C": [.3, .5, .6, .7, .9, 1]
+    },{
+        "solver": ['saga'],
+        "C": [.3, .5, .6, .7, .9, 1]
+    }]
+    folds =10
+    results = []
+    for classifier_inputs in classifier_inputs_list:
+        results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+    return results
+    
 def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
     output_filename = "lxr_nobkg_results.csv"
@@ -369,7 +384,6 @@ def remove_unkekulizable(csv_file):
 
 def dud_experiment():
     dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
-    dud_datasets = ["ace", "ada", "alr2", "ampc", "ar", "hmga"]
 
     dud_raw_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset)
         for dataset in dud_datasets]
@@ -383,28 +397,28 @@ def dud_experiment():
     make_folder("dud/results")
     make_files(dud_result_files)
 
-    print("building csv files from raw files")
-    for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
-        print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
-        smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
+    # print("building csv files from raw files")
+    # for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
+    #     print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
+    #     smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
 
-    print("removing unkekulizable molecules")
-    for csv_file in dud_smile_csv_files:
-        remove_unkekulizable(csv_file)
+    # print("removing unkekulizable molecules")
+    # for csv_file in dud_smile_csv_files:
+    #     remove_unkekulizable(csv_file)
 
-    print("computing fingerprints")
-    from compute_fingerprint import main
-    for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
-        print("%s -> %s " % (csv_file, fingerprint_filename))
-        task_params = {'target_name': 'target', 'data_file': csv_file}
-        with open(csv_file) as file_handle:
-            num_molecules = sum([1 for i in file_handle])-1
-            assert(num_molecules > 20)
-        N_train = num_molecules - 20
-        N_val = 20
-        train_val_test_split = (N_train, N_val, 0)
-        print("main(%s, %s, %s)" %(task_params, train_val_test_split, fingerprint_filename))
-        main(task_params, train_val_test_split, fingerprint_filename)
+    # print("computing fingerprints")
+    # from compute_fingerprint import main
+    # for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
+    #     print("%s -> %s " % (csv_file, fingerprint_filename))
+    #     task_params = {'target_name': 'target', 'data_file': csv_file}
+    #     with open(csv_file) as file_handle:
+    #         num_molecules = sum([1 for i in file_handle])-1
+    #         assert(num_molecules > 20)
+    #     N_train = num_molecules - 20
+    #     N_val = 20
+    #     train_val_test_split = (N_train, N_val, 0)
+    #     print("main(%s, %s, %s)" %(task_params, train_val_test_split, fingerprint_filename))
+    #     main(task_params, train_val_test_split, fingerprint_filename)
 
     print("running fingerprint experiments")
     for fingerprint_filename, result_filename in zip(dud_fingerprint_files, dud_result_files):
