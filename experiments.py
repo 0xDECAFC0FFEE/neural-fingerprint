@@ -6,6 +6,8 @@ from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import log_loss, matthews_corrcoef
+from sklearn.neural_network import MLPClassifier
+from sklearn.linear_model import LogisticRegression
 from itertools import product
 from rdkit.Chem import MolFromSmiles
 from tqdm import tqdm
@@ -86,6 +88,7 @@ def sampling(arguments, classifier_type, dataset):
             neg_train_Y.append(target)
     pos = len(pos_train_X)
     neg = len(neg_train_X)
+   
     if neg/pos >= 2:
         stop = 0
         results = []
@@ -281,47 +284,36 @@ def svm_experiment(dataset, output_log):
     for classifier_inputs in classifier_inputs_list:
         results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
-def mlp_experiment(dataset):
+	
+def mlp_experiment(dataset, output_log):
     classifier = MLPClassifier
     classifier_inputs_list = [{
                 "solver": ['lbfgs'],
         "hidden_layer_sizes": range(10, 101, 10)
-    },{
-                "solver": ['adam'],
-        "hidden_layer_sizes": range(10, 101, 10)
-    },{
-                "solver": ['sgd'],
-        "hidden_layer_sizes": range(10, 101, 10)
     }]
-    folds = 10
+    folds = 5
     results = []
     for classifier_inputs in classifier_inputs_list:
-        results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+        results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
     
-def logreg_experiment(dataset):
+def logreg_experiment(dataset, output_log):
     classifier = LogisticRegression
     
     classifier_inputs_list = [{
-        "solver": ['liblinear'],
-        "C": [.3, .5, .6, .7, .9, 1]
-    },{
-        "solver": ['newton-cg'],
-        "C": [.3, .5, .6, .7, .9, 1]
+       "solver": ['newton-cg'],
+        "C": [.3, .5, .6]
     },{
         "solver": ['lbfgs'],
-        "C": [.3, .5, .6, .7, .9, 1]
+        "C": [.3, .5, .6]
     },{
-        "solver": ['sag'],
-        "C": [.3, .5, .6, .7, .9, 1]
-    },{
-        "solver": ['saga'],
-        "C": [.3, .5, .6, .7, .9, 1]
+        "solver": ['liblinear'],
+        "C": [.3, .5, .6]
     }]
-    folds =10
+    folds =5
     results = []
     for classifier_inputs in classifier_inputs_list:
-        results.extend(experiment(dataset, classifier, classifier_inputs, folds))
+        results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log))
     return results
     
 def lxr_experiment():
@@ -331,8 +323,10 @@ def lxr_experiment():
 
     dataset = import_data(input_filename, column_names)
 
-    random_forest_experiment(dataset, output_filename)
+    # random_forest_experiment(dataset, output_filename)
     # svm_experiment(dataset, output_filename)
+    mlp_experiment(dataset, output_filename)
+    logreg_experiment(dataset, output_filename)
 
 def smi_to_csv(pos_file, neg_file, output_file):
     data = []
@@ -393,7 +387,7 @@ def dud_experiment():
     dud_fingerprint_files = ["dud/fingerprints/%s.csv"%dataset for dataset in dud_datasets]
     make_folder("dud/fingerprints")
     make_files(dud_fingerprint_files)
-    dud_result_files = ["dud/results/%s.csv"%dataset for dataset in dud_datasets]
+    dud_result_files = ["dud/results/RegvsNN_%s.csv"%dataset for dataset in dud_datasets]
     make_folder("dud/results")
     make_files(dud_result_files)
 
@@ -428,9 +422,11 @@ def dud_experiment():
 
         dataset = import_data(fingerprint_filename, column_names)
 
-        random_forest_experiment(dataset, result_filename)
+        # random_forest_experiment(dataset, result_filename)
         # svm_experiment(dataset, result_filename)
+        mlp_experiment(dataset, result_filename)
+        logreg_experiment(dataset, result_filename)
 
 if __name__ == "__main__":
-    lxr_experiment()    
-    # dud_experiment()
+    #lxr_experiment()    
+    dud_experiment()
