@@ -17,7 +17,7 @@ from datetime import datetime
 import copy
 import os
 
-def import_data(csv_filename, column_names):
+def import_data_csv(csv_filename, column_names):
     # column_names is dictionary mapping from the keys to column names in the file
     # expecting keys "fingerprints" and "target"
     with open(csv_filename) as file:
@@ -33,7 +33,16 @@ def import_data(csv_filename, column_names):
 
         return (fingerprints, targets)
 
-def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None):
+
+def import_data(filename):
+    with open(filename) as file:
+        smiles = []
+        for line in file:
+            index = line.rfind(" ")
+            smiles.append(line[:index])
+    return smiles
+
+def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, **other_things_to_log):
     if pred_y == None:
         pred_y = [max([(index, i) for i, index in enumerate(probs)])[1] for probs in pred_y_proba]
 
@@ -52,8 +61,9 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None):
         weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
     else:
         weighted_log_loss = log_loss(test_y, pred_y_proba)
-    # f_score = 
-    return {
+
+    # f_score =
+    result = {
         "accuracy": accuracy,
         "TP": TP,
         "TN": TN,
@@ -62,16 +72,17 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None):
         "MCC": mcc,
         "log_loss": weighted_log_loss
     }
+    result.update(other_things_to_log)
+    return result
 
 
-
-def sampling(arguments, classifier_type, dataset):
+def sampling(arguments, classifier_type, input_dataset):
     pos_train_X = []
     pos_train_Y = []
     neg_train_X = []
     neg_train_Y = []
 
-    training_dataset, validation_dataset = dataset
+    training_dataset, validation_dataset = input_dataset
     test_y = validation_dataset[1]
     num_pos_val = sum(test_y)
     num_neg_val = len(test_y) - num_pos_val
@@ -88,8 +99,9 @@ def sampling(arguments, classifier_type, dataset):
             neg_train_Y.append(target)
     pos = len(pos_train_X)
     neg = len(neg_train_X)
-   
-    if neg/pos >= 2:
+
+    if float(neg)/pos >= 1:
+
         stop = 0
         results = []
         for i in range (neg/pos):
@@ -97,7 +109,7 @@ def sampling(arguments, classifier_type, dataset):
             stop = stop + pos
             dataset = (train_sample, validation_dataset)
             results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
-    elif pos/neg >= 2:
+    elif float(pos)/neg >= 1:
         stop = 0
         results = []
         for i in range (pos/neg):
@@ -173,9 +185,10 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
         classifier = classifier_type(**best_arg)
         classifier.fit(train_X, train_y)
         pred_y = classifier.predict_proba(test_X)
-        score = interpret_score(pred_y, test_y)
+        score = interpret_score(pred_y, test_y, feature_importances=str(classifier.feature_importances_).replace("\n", ""))
 
         argument_scores.append(copy.deepcopy((best_arg, score)))
+
     
     return argument_scores
 
@@ -321,7 +334,7 @@ def lxr_experiment():
     output_filename = "lxr_nobkg_results.csv"
     column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
 
-    dataset = import_data(input_filename, column_names)
+    dataset = import_data_csv(input_filename, column_names)
 
     # random_forest_experiment(dataset, output_filename)
     # svm_experiment(dataset, output_filename)
@@ -391,28 +404,26 @@ def dud_experiment():
     make_folder("dud/results")
     make_files(dud_result_files)
 
-    # print("building csv files from raw files")
-    # for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
-    #     print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
-    #     smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
+    print("building csv files from raw files")
+    for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
+        print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
+        smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
 
-    # print("removing unkekulizable molecules")
-    # for csv_file in dud_smile_csv_files:
-    #     remove_unkekulizable(csv_file)
+    print("removing unkekulizable molecules")
+    for csv_file in dud_smile_csv_files:
+        remove_unkekulizable(csv_file)
 
-    # print("computing fingerprints")
-    # from compute_fingerprint import main
-    # for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
-    #     print("%s -> %s " % (csv_file, fingerprint_filename))
-    #     task_params = {'target_name': 'target', 'data_file': csv_file}
-    #     with open(csv_file) as file_handle:
-    #         num_molecules = sum([1 for i in file_handle])-1
-    #         assert(num_molecules > 20)
-    #     N_train = num_molecules - 20
-    #     N_val = 20
-    #     train_val_test_split = (N_train, N_val, 0)
-    #     print("main(%s, %s, %s)" %(task_params, train_val_test_split, fingerprint_filename))
-    #     main(task_params, train_val_test_split, fingerprint_filename)
+    print("computing fingerprints")
+    from compute_fingerprint import compute_fingerprints
+    for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
+        print("%s -> %s " % (csv_file, fingerprint_filename))
+        with open(csv_file) as file_handle:
+            num_molecules = sum([1 for i in file_handle])-1
+            assert(num_molecules > 20)
+        N_train = num_molecules - 20
+        N_val = 20
+        train_val_test_split = (N_train, N_val, 0)
+        compute_fingerprints(task_params, train_val_test_split, fingerprint_filename, target_name='target', data_file=csv_file)
 
     print("running fingerprint experiments")
     for fingerprint_filename, result_filename in zip(dud_fingerprint_files, dud_result_files):
@@ -420,13 +431,32 @@ def dud_experiment():
 
         column_names = {"fingerprints": "fingerprints", "target": "target"}
 
-        dataset = import_data(fingerprint_filename, column_names)
+        dataset = import_data_csv(fingerprint_filename, column_names)
 
         # random_forest_experiment(dataset, result_filename)
         # svm_experiment(dataset, result_filename)
         mlp_experiment(dataset, result_filename)
         logreg_experiment(dataset, result_filename)
 
+
+def top_1000_experiment():
+    input_filename = "top1000_rf.smi"
+    smiles_filename = "top1000_rf_smiles.csv"
+    # make_files([smiles_filename])
+    
+    dataset = import_data(input_filename)
+    dataset = [{"smiles": smile} for smile in dataset]
+    header = ["smiles"]
+    
+    with open(smiles_filename, "w+") as smiles_file:
+        csv_writer = csv.DictWriter(smiles_file, header, "")
+        csv_writer.writeheader()
+        csv_writer.writerows(dataset)
+
+
 if __name__ == "__main__":
-    #lxr_experiment()    
-    dud_experiment()
+
+    # top_1000_experiment()
+    lxr_experiment()
+    # dud_experiment()
+
