@@ -65,11 +65,10 @@ def train_nn(pred_fun, loss_fun, num_weights, train_smiles, train_raw_targets, t
 
 def compute_fingerprints(train_val_test_split, output_filename, data_file, data_target_column):
     print "Loading data..."
-    traindata, valdata, testdata = load_data(
+    traindata, valdata, _ = load_data(
         data_file, train_val_test_split, input_name='smiles', target_name=data_target_column)
     train_inputs, train_targets = traindata
     val_inputs,   val_targets   = valdata
-    test_inputs,  test_targets  = testdata
 
     smiles_to_fps = {}
     conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
@@ -83,13 +82,12 @@ def compute_fingerprints(train_val_test_split, output_filename, data_file, data_
         train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
                  train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
 
-    print("val_inputs", val_inputs)
-    print("pred func", pred_fun(trained_weights, val_inputs))
-    print("pred func 2", pred_fun(trained_weights, val_inputs))
-    
+    pred_fun(trained_weights, list(train_inputs) + list(val_inputs))
+    # updating weights in smiles_to_fps with final trained weights
+
     with open(output_filename, "w+") as smiles_fps_file:
-        all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
-        all_targets = list(train_targets) + list(val_targets) + list(test_targets)
+        all_inputs = list(train_inputs) + list(val_inputs)
+        all_targets = list(train_targets) + list(val_targets)
 
         smile_to_target = {s:t for s, t in zip(all_inputs, all_targets)}
         header = ["smiles", "fingerprints", data_target_column]
@@ -100,40 +98,35 @@ def compute_fingerprints(train_val_test_split, output_filename, data_file, data_
         for line in file_info:
             writer.writerow(line)
 
-def interpolate_fingerprints(train_val_test_split, output_filename, data_file, data_target_column):
+def interpolate_fingerprints(train_val_test_split, output_filename, example_file, example_target_column, target_filename):
     print "Loading data..."
-    traindata, valdata, testdata = load_data(
-        data_file, train_val_test_split, input_name='smiles', target_name=data_target_column)
+    traindata, valdata, _ = load_data(
+        example_file, train_val_test_split, input_name='smiles', target_name=example_target_column)
     train_inputs, train_targets = traindata
     val_inputs,   val_targets = valdata
-    test_inputs,  test_targets = testdata
+
+    target_inputs = []
+    with open(target_filename) as target_file:
+        reader = csv.DictReader(target_file)
+        for line in reader:
+            target_inputs.append(line["smiles"])
 
     smiles_to_fps = {}
     conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
     conv_arch_params = {'num_hidden_features': conv_layer_sizes,
                         'fp_length': model_params['fp_length'], 'normalize': 1,
                         'smiles_to_fps': smiles_to_fps}
-    loss_fun, pred_fun, conv_parser = \
-        build_conv_deep_net(
-            conv_arch_params, vanilla_net_params, model_params['L2_reg'])
+    loss_fun, pred_fun, conv_parser = build_conv_deep_net(conv_arch_params, vanilla_net_params, model_params['L2_reg'])
     num_weights = len(conv_parser)
     predict_func, trained_weights, conv_training_curve = \
         train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
                  train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
 
-    print("val_inputs", val_inputs)
-    print("pred func", pred_fun(trained_weights, val_inputs))
-    print("pred func 2", pred_fun(trained_weights, val_inputs))
+    pred_fun(trained_weights, target_inputs)
 
     with open(output_filename, "w+") as smiles_fps_file:
-        all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
-        all_targets = list(train_targets) + \
-            list(val_targets) + list(test_targets)
-
-        smile_to_target = {s: t for s, t in zip(all_inputs, all_targets)}
-        header = ["smiles", "fingerprints", data_target_column]
-        file_info = [[smile, fp, smile_to_target[smile]]
-                     for smile, fp in sorted(smiles_to_fps.items())]
+        header = ["smiles", "fingerprints"]
+        file_info = [[smile, smiles_to_fps[smile]] for smile in sorted(target_inputs)]
 
         writer = csv.writer(smiles_fps_file)
         writer.writerow(header)
@@ -141,9 +134,16 @@ def interpolate_fingerprints(train_val_test_split, output_filename, data_file, d
             writer.writerow(line)
 
 if __name__ == '__main__':
-    compute_fingerprints(
+    # compute_fingerprints(
+    #     train_val_test_split=(95, 45, 0),
+    #     data_file='lxr_nobkg.csv',
+    #     data_target_column='LXRbeta binder',
+    #     output_filename='lxr_nobkg_fingerprints.csv'
+    # )
+    interpolate_fingerprints(
         train_val_test_split=(95, 45, 0),
-        output_filename='lxr_nobkg_fingerprints_2.csv',
-        data_file='lxr_nobkg.csv',
-        data_target_column='LXRbeta binder'
+        output_filename='top1000_rf_fingerprints.csv',
+        example_file='lxr_nobkg.csv',
+        example_target_column='LXRbeta binder',
+        target_filename='top1000_rf_smiles.csv'
     )
