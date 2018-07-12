@@ -5,7 +5,7 @@ from autograd.scipy.misc import logsumexp
 from features import num_atom_features, num_bond_features
 from util import memoize, WeightsParser
 from mol_graph import graph_from_smiles_tuple, degrees
-from build_vanilla_net import build_fingerprint_deep_net, relu, batch_normalize
+from build_vanilla_net import build_fingerprint_deep_net, relu, batch_normalize, build_lxr_deep_net
 
 
 def fast_array_from_list(xs):
@@ -136,3 +136,7 @@ def build_conv_deep_net(conv_params, net_params, fp_l2_penalty=0.0):
     conv_fp_func, conv_parser = build_convnet_fingerprint_fun(**conv_params)
     return build_fingerprint_deep_net(net_params, conv_fp_func, conv_parser, fp_l2_penalty)
 
+def build_conv_class_net(conv_params, net_params, fp_l2_penalty=0.0):
+    """Returns loss_fun(all_weights, smiles, targets), pred_fun, combined_parser."""
+    conv_fp_func, conv_parser = build_convnet_fingerprint_fun(**conv_params)
+    return build_lxr_deep_net(net_params, conv_fp_func, conv_parser, fp_l2_penalty)

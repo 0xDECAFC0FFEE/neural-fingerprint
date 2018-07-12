@@ -2,7 +2,7 @@ import autograd.numpy as np
 
 from util import memoize, WeightsParser
 from rdkit_utils import smiles_to_fps
-
+from sklearn.metrics import log_loss
 
 def batch_normalize(activations):
     mbmean = np.mean(activations, axis=0, keepdims=True)
@@ -59,6 +59,35 @@ def build_standard_net(layer_sizes, normalize, L2_reg, L1_reg=0.0, activation_fu
 
     return loss, predictions, parser
 
+def build_lxr_net(layer_sizes, normalize, L2_reg, L1_reg=0.0, activation_function=relu,
+                       nll_func=binary_classification_nll):
+    """Just a plain old neural net, nothing to do with molecules.
+    layer sizes includes the input size."""
+    layer_sizes = layer_sizes + [1]
+
+    parser = WeightsParser()
+    for i, shape in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
+        parser.add_weights(('weights', i), shape)
+        parser.add_weights(('biases', i), (1, shape[1]))
+
+    def predictions(W_vect, X):
+        cur_units = X
+        for layer in range(len(layer_sizes) - 1):
+            cur_W = parser.get(W_vect, ('weights', layer))
+            cur_B = parser.get(W_vect, ('biases', layer))
+            cur_units = np.dot(cur_units, cur_W) + cur_B
+            if layer < len(layer_sizes) - 2:
+                if normalize:
+                    cur_units = batch_normalize(cur_units)
+                cur_units = activation_function(cur_units)
+        return cur_units[:, 0]
+
+    def loss(w, X, targets):
+        assert len(w) > 0
+        preds = predictions(w, X)
+        return nll_func(preds, targets)
+
+    return loss, predictions, parser
 
 def build_fingerprint_deep_net(net_params, fingerprint_func, fp_parser, fp_l2_penalty):
     """Composes a fingerprint function with signature (smiles, weights, params)
@@ -87,6 +116,32 @@ def build_fingerprint_deep_net(net_params, fingerprint_func, fp_parser, fp_l2_pe
         fingerprint_weights, net_weights = unpack_weights(weights)
         fingerprints = fingerprint_func(fingerprint_weights, smiles)
         return net_pred_fun(net_weights, fingerprints)
+
+    return loss_fun, pred_fun, combined_parser
+
+def build_lxr_deep_net(net_params, fingerprint_func, fp_parser, fp_l2_penalty):
+  
+    net_loss_fun, net_pred_fun, net_parser = build_lxr_net(**net_params)
+
+    combined_parser = WeightsParser()
+    combined_parser.add_weights('fingerprint weights', (len(fp_parser),))
+    combined_parser.add_weights('net weights', (len(net_parser),))
+
+    def unpack_weights(weights):
+        fingerprint_weights = combined_parser.get(weights, 'fingerprint weights')
+        net_weights         = combined_parser.get(weights, 'net weights')
+        return fingerprint_weights, net_weights
+  
+    def loss_fun(weights, smiles, targets):
+        fingerprint_weights, net_weights = unpack_weights(weights)
+        fingerprints = fingerprint_func(fingerprint_weights, smiles)
+        return net_loss_fun(net_weights, fingerprints, targets)
+    
+    def pred_fun(weights, smiles):
+        fingerprint_weights, net_weights = unpack_weights(weights)
+        fingerprints = fingerprint_func(fingerprint_weights, smiles)
+        predictions = sigmoid(net_pred_fun(net_weights, fingerprints))
+        return np.around(predictions).astype(bool)
 
     return loss_fun, pred_fun, combined_parser
 

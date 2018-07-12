@@ -51,8 +51,17 @@ def classify_evaluate(dataset, classifier, folds):
 	test_accuracy = sum(scores["test_score"])/len(scores["test_score"])
 	train_accuracy = sum(scores["train_score"]) / len(scores["train_score"])
         dist = scores["test_score"]
-	return (test_accuracy, train_accuracy, dist)
 
+
+        
+	return (test_accuracy, train_accuracy, dist)
+def ROC_50_evaluate(dataset, classifier):
+	classifier.fit(
+    
+
+
+
+    
 def log_experiment(results, filename):
 	with open(filename, "a+") as log_file:
 		pass
