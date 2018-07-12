@@ -12,18 +12,6 @@ import csv
 
 from autograd import grad
 
-# task_params = {'target_name' : 'measured log solubility in mols per litre',
-#                'data_file'   : 'examples/delaney.csv'}
-# N_train = 800
-# N_val = 20
-# N_test = 20
-
-task_params = {'target_name': 'LXRbeta binder',
-               'data_file': 'dud/ace_actives.smi'}
-N_train = 131
-N_val   = 10
-N_test  = 0
-
 model_params = dict(fp_length=50,    # Usually neural fps need far fewer dimensions than morgan.
                     fp_depth=4,      # The depth of the network equals the fingerprint radius.
                     conv_width=20,   # Only the neural fps need this parameter.
@@ -75,48 +63,87 @@ def train_nn(pred_fun, loss_fun, num_weights, train_smiles, train_raw_targets, t
     return predict_func, trained_weights, training_curve
 
 
-def main(task_params, train_val_test_split, output_filename):
-    N_train, N_val, N_test = train_val_test_split
+def compute_fingerprints(train_val_test_split, output_filename, data_file, data_target_column):
     print "Loading data..."
     traindata, valdata, testdata = load_data(
-        task_params['data_file'], (N_train, N_val, N_test),
-        input_name='smiles', target_name=task_params['target_name'])
+        data_file, train_val_test_split, input_name='smiles', target_name=data_target_column)
     train_inputs, train_targets = traindata
     val_inputs,   val_targets   = valdata
     test_inputs,  test_targets  = testdata
 
-    def run_conv_experiment():
-        smiles_to_fps = {}
+    smiles_to_fps = {}
+    conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
+    conv_arch_params = {'num_hidden_features' : conv_layer_sizes,
+                        'fp_length' : model_params['fp_length'], 'normalize' : 1,
+                        'smiles_to_fps': smiles_to_fps}
+    loss_fun, pred_fun, conv_parser = \
+        build_conv_deep_net(conv_arch_params, vanilla_net_params, model_params['L2_reg'])
+    num_weights = len(conv_parser)
+    predict_func, trained_weights, conv_training_curve = \
+        train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
+                 train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
 
-        conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
-        conv_arch_params = {'num_hidden_features' : conv_layer_sizes,
-                            'fp_length' : model_params['fp_length'], 'normalize' : 1,
-                            'smiles_to_fps': smiles_to_fps}
-        loss_fun, pred_fun, conv_parser = \
-            build_conv_deep_net(conv_arch_params, vanilla_net_params, model_params['L2_reg'])
-        num_weights = len(conv_parser)
-        predict_func, trained_weights, conv_training_curve = \
-            train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
-                     train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
+    print("val_inputs", val_inputs)
+    print("pred func", pred_fun(trained_weights, val_inputs))
+    print("pred func 2", pred_fun(trained_weights, val_inputs))
+    
+    with open(output_filename, "w+") as smiles_fps_file:
+        all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
+        all_targets = list(train_targets) + list(val_targets) + list(test_targets)
 
-        with open(output_filename, "w+") as smiles_fps_file:
-            writer = csv.writer(smiles_fps_file, lineterminator='\n')
+        smile_to_target = {s:t for s, t in zip(all_inputs, all_targets)}
+        header = ["smiles", "fingerprints", data_target_column]
+        file_info = [[smile, fp, smile_to_target[smile]] for smile, fp in sorted(smiles_to_fps.items())]
 
-            all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
-            all_targets = list(train_targets) + list(val_targets) + list(test_targets)
+        writer = csv.writer(smiles_fps_file)
+        writer.writerow(header)
+        for line in file_info:
+            writer.writerow(line)
 
-            file = [["smiles", "fingerprints", task_params['target_name']]]
-            for smile, target in sorted(zip(all_inputs, all_targets)):
-                try:
-                    file.append([smile, smiles_to_fps[smile], target])
-                except:
-                    print("skipping smile %s in fingerprint computation" % smile)
-            
-            for line in file:
-                writer.writerow(line)
+def interpolate_fingerprints(train_val_test_split, output_filename, data_file, data_target_column):
+    print "Loading data..."
+    traindata, valdata, testdata = load_data(
+        data_file, train_val_test_split, input_name='smiles', target_name=data_target_column)
+    train_inputs, train_targets = traindata
+    val_inputs,   val_targets = valdata
+    test_inputs,  test_targets = testdata
 
-    run_conv_experiment()
+    smiles_to_fps = {}
+    conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
+    conv_arch_params = {'num_hidden_features': conv_layer_sizes,
+                        'fp_length': model_params['fp_length'], 'normalize': 1,
+                        'smiles_to_fps': smiles_to_fps}
+    loss_fun, pred_fun, conv_parser = \
+        build_conv_deep_net(
+            conv_arch_params, vanilla_net_params, model_params['L2_reg'])
+    num_weights = len(conv_parser)
+    predict_func, trained_weights, conv_training_curve = \
+        train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
+                 train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
+
+    print("val_inputs", val_inputs)
+    print("pred func", pred_fun(trained_weights, val_inputs))
+    print("pred func 2", pred_fun(trained_weights, val_inputs))
+
+    with open(output_filename, "w+") as smiles_fps_file:
+        all_inputs = list(train_inputs) + list(val_inputs) + list(test_inputs)
+        all_targets = list(train_targets) + \
+            list(val_targets) + list(test_targets)
+
+        smile_to_target = {s: t for s, t in zip(all_inputs, all_targets)}
+        header = ["smiles", "fingerprints", data_target_column]
+        file_info = [[smile, fp, smile_to_target[smile]]
+                     for smile, fp in sorted(smiles_to_fps.items())]
+
+        writer = csv.writer(smiles_fps_file)
+        writer.writerow(header)
+        for line in file_info:
+            writer.writerow(line)
 
 if __name__ == '__main__':
-    smi_to_csv("dud/ace_actives.smi", "dud/ace_background.smi")
-    main(task_params, N_train, N_val, N_test)
+    compute_fingerprints(
+        train_val_test_split=(95, 45, 0),
+        output_filename='lxr_nobkg_fingerprints_2.csv',
+        data_file='lxr_nobkg.csv',
+        data_target_column='LXRbeta binder'
+    )
