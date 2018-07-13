@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from time import time
 from functools import partial
 from collections import OrderedDict
+from sklearn.metrics import accuracy_score
 
 def collect_test_losses(num_folds):
     # Run this after CV results are in. e.g:
@@ -47,6 +48,9 @@ def rmse(X, Y):
 
 def slicedict(d, ixs):
     return {k : v[ixs] for k, v in d.iteritems()}
+
+def accuracy(pred, target):
+    return accuracy_score(pred,target)
 
 class memoize(object):
     def __init__(self, func):

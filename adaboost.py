@@ -1,11 +1,13 @@
 import csv
 import ast
 from collections import namedtuple, defaultdict
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import log_loss, matthews_corrcoef, f1_score
+from sklearn.metrics import log_loss, matthews_corrcoef
 from sklearn.neural_network import MLPClassifier
 from sklearn.linear_model import LogisticRegression
 from itertools import product
@@ -17,7 +19,7 @@ from datetime import datetime
 import copy
 import os
 
-def import_data_csv(csv_filename, column_names, random_data_filename=None):
+def import_data(csv_filename, column_names):
     # column_names is dictionary mapping from the keys to column names in the file
     # expecting keys "fingerprints" and "target"
     with open(csv_filename) as file:
@@ -28,32 +30,12 @@ def import_data_csv(csv_filename, column_names, random_data_filename=None):
         fingerprints = [line[column_names["fingerprints"]] for line in file]
         targets = [line[column_names["target"]] for line in file]
 
-
-        if random_data_filename:
-            with open(random_data_filename) as random_data:
-                reader = csv.DictReader(random_data)
-                all_random_fingerprints = [line["fingerprints"] for line in reader]
-            random.shuffle(all_random_fingerprints)
-            random_fingerprints = list(all_random_fingerprints[:1000])
-            fingerprints.extend(random_fingerprints)
-            targets.extend(["0.0" for _ in range(len(random_fingerprints))])
-        
         fingerprints = [ast.literal_eval(fingerprint) for fingerprint in fingerprints]
         targets = [ast.literal_eval(target) for target in targets]
 
         return (fingerprints, targets)
 
-
-
-def import_data(filename):
-    with open(filename) as file:
-        smiles = []
-        for line in file:
-            index = line.rfind(" ")
-            smiles.append(line[:index])
-    return smiles
-
-def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, **other_things_to_log):
+def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None):
     if pred_y == None:
         pred_y = [max([(index, i) for i, index in enumerate(probs)])[1] for probs in pred_y_proba]
 
@@ -72,30 +54,26 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
     else:
         weighted_log_loss = log_loss(test_y, pred_y_proba)
-    f1 = f1_score(test_y, pred_y)
-
-    result = {
+    # f_score = 
+    return {
         "accuracy": accuracy,
         "TP": TP,
         "TN": TN,
         "FP": FP,
         "FN": FN,
         "MCC": mcc,
-        "log_loss": weighted_log_loss,
-        "f1": f1,
-        "target": f1
+        "log_loss": weighted_log_loss
     }
-    result.update(other_things_to_log)
-    return result
 
 
-def sampling(arguments, classifier_type, input_dataset):
+
+def sampling(arguments, classifier_type, dataset):
     pos_train_X = []
     pos_train_Y = []
     neg_train_X = []
     neg_train_Y = []
 
-    training_dataset, validation_dataset = input_dataset
+    training_dataset, validation_dataset = dataset
     test_y = validation_dataset[1]
     num_pos_val = sum(test_y)
     num_neg_val = len(test_y) - num_pos_val
@@ -112,9 +90,8 @@ def sampling(arguments, classifier_type, input_dataset):
             neg_train_Y.append(target)
     pos = len(pos_train_X)
     neg = len(neg_train_X)
-
-    if float(neg)/pos >= 1:
-
+   
+    if neg/pos >= 2:
         stop = 0
         results = []
         for i in range (neg/pos):
@@ -122,7 +99,7 @@ def sampling(arguments, classifier_type, input_dataset):
             stop = stop + pos
             dataset = (train_sample, validation_dataset)
             results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
-    elif float(pos)/neg >= 1:
+    elif pos/neg >= 2:
         stop = 0
         results = []
         for i in range (pos/neg):
@@ -147,7 +124,7 @@ def sampling(arguments, classifier_type, input_dataset):
     
     return result
 
-def fit_score_classifier(arguments, classifier_type, dataset, validation_weights=None):
+def fit_score_classifier(arguments, classifier_type, dataset, validation_weights):
     ((train_X, train_y), (test_X, test_y)) = dataset
     
     classifier = classifier_type(**arguments)
@@ -159,63 +136,52 @@ def fit_score_classifier(arguments, classifier_type, dataset, validation_weights
 
 def cv_layer_2(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
-    indexlist = StratifiedKFold(n_splits=folds, random_state=None, shuffle=True)
-
+    random.seed(datetime.now())
+    train_X, test_X, train_y, test_y = train_test_split(fingerprints, targets, \
+									test_size = 0.2, random_state = random.randint(0, 9999999))
+   	
     max_score, max_arg = None, None
-    for train_index, test_index in indexlist.split(fingerprints, targets):
-        train_X, train_y = np.array(fingerprints)[train_index], np.array(targets)[train_index]
-        test_X, test_y = np.array(fingerprints)[test_index], np.array(targets)[test_index]
-        for argument in arguments:
+    for argument in arguments:
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
             
             train_val_dataset = ((train_X, train_y), (test_X, test_y))
-            score = fit_score_classifier(argument, classifier_type, train_val_dataset)
-
-            cur_score = score["target"]
+            score = sampling(argument, classifier_type, train_val_dataset)
 
             if max_score == None:
-                max_score, max_arg = (cur_score, argument)
-                print("replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-            elif "n_estimators" in max_arg and "max_depth" in max_arg and "n_estimators" in argument and "max_depth" in argument:
-                if max_score < cur_score:
-                    max_score, max_arg = (cur_score, argument)
-                    print("replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-                elif max_score == cur_score:
-                    if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
-                        max_score, max_arg = (cur_score, argument)
-                        print("replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-                    print("not replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-                else:
-                    print("not replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-            elif max_score <= cur_score:
-                max_score, max_arg = (cur_score, argument)
-                print("replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
-            else: 
-                print("not replacing %s %s with %s %s" % (max_score, max_arg, cur_score, argument))
+                max_score, max_arg = (score["log_loss"], argument)
+            elif "n_estimators" in max_arg and "max_depth" in max_arg:
+                if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
+                    max_score, max_arg = (score, argument)
+            elif max_score <= score["log_loss"]:
+                max_score, max_arg = (score["log_loss"], argument)
+                           
     return max_arg
 
 
 def cv_layer_1(arguments, classifier_type, dataset, folds):
     fingerprints, targets = dataset
 
-    indexlist = StratifiedKFold(n_splits=folds, random_state=None, shuffle=True)
+    random.seed(datetime.now())
+    train_X, test_X, train_y, test_y = train_test_split(fingerprints, targets, \
+									test_size = 0.2, random_state = random.randint(0, 9999999))
 
     argument_scores = []
-    for train_index, test_index in tqdm(list(indexlist.split(fingerprints, targets))):
-        train_X, train_y = np.array(fingerprints)[train_index], np.array(targets)[train_index]
-        test_X, test_y = np.array(fingerprints)[test_index], np.array(targets)[test_index]
-        dataset_layer_2 = (train_X, train_y)
-        
-        best_arg = cv_layer_2(arguments, classifier_type, dataset_layer_2, folds)
+	
+    dataset_layer_2 = (train_X, train_y)
+    
+    best_arg = cv_layer_2(arguments, classifier_type, dataset_layer_2, folds)
 
-        classifier = classifier_type(**best_arg)
-        classifier.fit(train_X, train_y)
-        pred_y = classifier.predict_proba(test_X)
-        score = interpret_score(pred_y, test_y)
+    classifier = classifier_type(**best_arg)
+    classifier.fit(train_X, train_y)
+    abt = AdaBoostClassifier(classifier, n_estimators = 2)
+    
+    abt.fit(train_X, train_y)
+    
+    pred_y = abt.predict_proba(test_X)
+    score = interpret_score(pred_y, test_y)
 
-        argument_scores.append(copy.deepcopy((best_arg, score)))
-
+    argument_scores.append(copy.deepcopy((best_arg, score)))
     
     return argument_scores
 
@@ -261,7 +227,7 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log):
         classifier_argument = zip(arg_names, arg_vals)
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
         arguments.append(classifier_argument)
-    
+        
     score_arguments = cv_layer_1(arguments, classifier_type, dataset, folds)
     print("score_arguments %s" % score_arguments)
 
@@ -285,50 +251,40 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log):
 def random_forest_experiment(dataset, output_log):
     classifier = RandomForestClassifier
     classifier_inputs = {
-        "max_depth": range(1, 51, 10),
-        "n_estimators": range(1, 51, 10),
-        "class_weight": ["balanced_subsample"],
-        "n_jobs": [-1]
+        "max_depth": range(1, 82, 20),
+        "n_estimators": range(1, 82, 20),
     }
-    folds = 5
+    folds = 10
 
     return experiment(dataset, classifier, classifier_inputs, folds, output_log)
-
+    
 
 def svm_experiment(dataset, output_log):
     classifier = SVC
-    classifier_inputs_list = [
-        # {
-        #     "kernel": ['poly'],
-        #     # "degree": range(2, 3),
-        #     # "gamma": [.001, .01, .1, .5, 1], 
-        #     # "C": [.3, .5, .6, .7, .9, 1],
-        #     # "coef0": [0, .1, .5],
-        #     "class_weight": ["balanced"],
-        #     "probability": [True]
-        # }, 
-        {
-            "kernel": ['rbf'],
-            "gamma": [.02, .03, .1, .2, .5, .7],
-            "C": [1, .9, .7, .5, .3, .2, .1],
-            "class_weight": ["balanced"],
-            "probability": [True]
-        },
-        # {
-        #     "kernel": ['sigmoid'],
-        #     # "gamma": [.001, .01, .1, .5, 1],
-        #     # "C": [.3, .5, .6, .7, .9, 1],
-        #     # "coef0": [0, .1, .5],
-        #     "class_weight": ["balanced"],
-        #     "probability": [True]
-        # }, {
-        #     "kernel": ['linear'],
-        #     # "C": [.3, .5, .6, .7, .9, 1],
-        #     "class_weight": ["balanced"],
-        #     "probability": [True]
-        # }
-    ]
-    folds = 5
+    folds = 10
+    classifier_inputs_list = [{
+        "kernel": ['poly'],
+        "degree": range(2, 3),
+        "gamma": [.001, .01, .1, .5, 1], 
+        "C": [.3, .5, .6, .7, .9, 1],
+        "coef0": [0, .1, .5],
+        "decision_function_shape": ['ovo', 'ovr'],
+    }, {
+        "kernel": ['rbf'],
+        "gamma": [.001, .01, .1, .5, 1],
+        "C": [.3, .5, .6, .7, .9, 1],
+        "decision_function_shape": ['ovo', 'ovr'],
+    }, {
+        "kernel": ['sigmoid'],
+        "gamma": [.001, .01, .1, .5, 1],
+        "C": [.3, .5, .6, .7, .9, 1],
+        "coef0": [0, .1, .5],
+        "decision_function_shape": ['ovo', 'ovr'],
+    }, {
+        "kernel": ['linear'],
+        "C": [.3, .5, .6, .7, .9, 1],
+        "decision_function_shape": ['ovo', 'ovr'],
+    }]
 
     results = []
     for classifier_inputs in classifier_inputs_list:
@@ -368,16 +324,15 @@ def logreg_experiment(dataset, output_log):
     
 def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
-    output_filename = "lxr_nobkg_results.csv"
+    output_filename = "lxr_nobkg_adaboost_results.csv"
     column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
-    random_data_filename = "top1000_rf_fingerprints.csv"
 
-    dataset = import_data_csv(input_filename, column_names, random_data_filename=random_data_filename)
+    dataset = import_data(input_filename, column_names)
 
     # random_forest_experiment(dataset, output_filename)
-    svm_experiment(dataset, output_filename)
+    # svm_experiment(dataset, output_filename)
     # mlp_experiment(dataset, output_filename)
-    # logreg_experiment(dataset, output_filename)
+    logreg_experiment(dataset, output_filename)
 
 def smi_to_csv(pos_file, neg_file, output_file):
     data = []
@@ -442,59 +397,19 @@ def dud_experiment():
     make_folder("dud/results")
     make_files(dud_result_files)
 
-    print("building csv files from raw files")
-    for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
-        print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
-        smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
-
-    print("removing unkekulizable molecules")
-    for csv_file in dud_smile_csv_files:
-        remove_unkekulizable(csv_file)
-
-    print("computing fingerprints")
-    from compute_fingerprint import compute_fingerprints
-    for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
-        print("%s -> %s " % (csv_file, fingerprint_filename))
-        with open(csv_file) as file_handle:
-            num_molecules = sum([1 for i in file_handle])-1
-            assert(num_molecules > 20)
-        N_train = num_molecules - 20
-        N_val = 20
-        train_val_test_split = (N_train, N_val, 0)
-        compute_fingerprints(task_params, train_val_test_split, fingerprint_filename, target_name='target', data_file=csv_file)
-
     print("running fingerprint experiments")
     for fingerprint_filename, result_filename in zip(dud_fingerprint_files, dud_result_files):
         print("%s -> %s" % (fingerprint_filename, result_filename))
 
         column_names = {"fingerprints": "fingerprints", "target": "target"}
 
-        dataset = import_data_csv(fingerprint_filename, column_names)
+        dataset = import_data(fingerprint_filename, column_names)
 
         # random_forest_experiment(dataset, result_filename)
         # svm_experiment(dataset, result_filename)
         mlp_experiment(dataset, result_filename)
         logreg_experiment(dataset, result_filename)
 
-
-def top_1000_experiment():
-    input_filename = "top1000_rf.smi"
-    smiles_filename = "top1000_rf_smiles.csv"
-    # make_files([smiles_filename])
-    
-    dataset = import_data(input_filename)
-    dataset = [{"smiles": smile} for smile in dataset]
-    header = ["smiles"]
-    
-    with open(smiles_filename, "w+") as smiles_file:
-        csv_writer = csv.DictWriter(smiles_file, header, "")
-        csv_writer.writeheader()
-        csv_writer.writerows(dataset)
-
-
 if __name__ == "__main__":
-
-    # top_1000_experiment()
-    lxr_experiment()
-    # dud_experiment()
-
+    lxr_experiment()    
+    #dud_experiment()
