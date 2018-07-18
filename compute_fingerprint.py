@@ -89,9 +89,12 @@ def compute_fingerprints(train_val_test_split, output_filename, data_file, data_
         all_inputs = list(train_inputs) + list(val_inputs)
         all_targets = list(train_targets) + list(val_targets)
 
-        smile_to_target = {s:t for s, t in zip(all_inputs, all_targets)}
         header = ["smiles", "fingerprints", data_target_column]
-        file_info = [[smile, fp, smile_to_target[smile]] for smile, fp in sorted(smiles_to_fps.items())]
+        file_info = [[smile, smiles_to_fps[smile], target] for smile, target in sorted(zip(all_inputs, all_targets))]
+
+        print(sum(all_targets))
+        print(sum([j for i, j in zip(all_inputs, all_targets)]))
+        print(sum([j for i, j in sorted(zip(all_inputs, all_targets))]))
 
         writer = csv.writer(smiles_fps_file)
         writer.writerow(header)
