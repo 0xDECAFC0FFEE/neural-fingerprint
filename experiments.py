@@ -2,6 +2,7 @@ import csv
 import ast
 from collections import namedtuple, defaultdict
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.svm import SVC
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import StratifiedKFold
@@ -19,8 +20,9 @@ import os
 from pprint import pprint
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc
+from compute_fingerprint import compute_fingerprints
 
-def import_data(csv_filename, column_names, random_data_filename=None, unique=True, cutoff=True):
+def import_data(csv_filename, column_names, unique=True, cutoff=True):
     # column_names is dictionary mapping from the keys to column names in the file
     # expecting keys "fingerprints" and "target"
     with open(csv_filename) as file:
@@ -53,21 +55,25 @@ def import_data(csv_filename, column_names, random_data_filename=None, unique=Tr
 
         return (fingerprints, targets)
 
-def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, show_roc=False, **other_things_to_log):
-    if pred_y == None:
-        pred_y = [max([(index, i) for i, index in enumerate(probs)])[1] for probs in pred_y_proba]
 
-    TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
-    FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
-    TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
-    FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
-    accuracy = float(TP+TN) / float(TP+FP+TN+FN)
-    mcc = matthews_corrcoef(test_y, pred_y)
-    
-    weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
+def plot_roc(test_y, roc_50_break, pred_y_proba):
+    pred_max_y_proba = [i[1] for i in pred_y_proba]
+    fpr, tpr, _ = roc_curve(test_y, pred_max_y_proba)
+    plt.figure()
+    lw = 2
+    plt.plot(fpr, tpr, color='darkorange', lw=lw)
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.plot([roc_50_break / float(len(pred_y_proba)), roc_50_break/float(len(pred_y_proba))], [0, 1], color='red', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic example')
+    plt.legend(loc="lower right")
+    plt.show()
 
-    f1 = f1_score(test_y, pred_y, sample_weight=validation_weights)
 
+def compute_roc_50(pred_y_proba, pred_y, test_y):
     pred_max_y_proba = [i[1] for i in pred_y_proba]
     ranking = zip(pred_max_y_proba, pred_y, test_y)
     cur_fp = 0
@@ -85,21 +91,29 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
     fpr_50, tpr_50, _ = roc_curve(test_y_50, pred_y_proba_50)
     roc50 = auc(fpr_50, tpr_50)
 
+    return roc50, roc_50_break
+
+def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, show_roc=False):
+    if pred_y == None:
+        pred_y = [max([(index, i) for i, index in enumerate(probs)])[1] for probs in pred_y_proba]
+
+    TP = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 1])
+    FP = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 1])
+    TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
+    FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
+    accuracy = float(TP+TN) / float(TP+FP+TN+FN)
+    mcc = matthews_corrcoef(test_y, pred_y)
+    
+    weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
+
+    f1 = f1_score(test_y, pred_y, sample_weight=validation_weights)
+
+    roc50, roc_50_break = compute_roc_50(pred_y_proba, pred_y, test_y)
+    
     if show_roc:
-        fpr, tpr, _ = roc_curve(test_y, pred_max_y_proba)
-        plt.figure()
-        lw = 2
-        plt.plot(fpr, tpr, color='darkorange', lw=lw)
-        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-        plt.plot([roc_50_break/float(len(pred_y_proba)), roc_50_break/float(len(pred_y_proba))], [0, 1], color='red', lw=lw, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('Receiver operating characteristic example')
-        plt.legend(loc="lower right")
-        plt.show()
-    result = {
+        plot_roc(test_y, roc_50_break, pred_y_proba)
+
+    return {
         "accuracy": accuracy,
         "TP": TP,
         "TN": TN,
@@ -109,9 +123,64 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         "log_loss": weighted_log_loss,
         "f1": f1,
         "target": f1,
-        # "roc50": roc50,
+        "roc50": roc50,
     }
-    result.update(other_things_to_log)
+
+def sampling(arguments, classifier_type, dataset):
+    pos_train_X = []
+    pos_train_Y = []
+    neg_train_X = []
+    neg_train_Y = []
+
+    training_dataset, validation_dataset = dataset
+    test_y = validation_dataset[1]
+    num_pos_val = sum(test_y)
+    num_neg_val = len(test_y) - num_pos_val
+    pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val), 1
+
+    validation_weights = [pos_weight if i == 1 else neg_weight for i in test_y]
+
+    for fingerprint, target in zip(training_dataset[0], training_dataset[1]):
+        if target == 1:
+            pos_train_X.append(fingerprint)
+            pos_train_Y.append(target)
+        else:
+            neg_train_X.append(fingerprint)
+            neg_train_Y.append(target)
+    pos = len(pos_train_X)
+    neg = len(neg_train_X)
+   
+    if neg/pos >= 2:
+        stop = 0
+        results = []
+        for i in range (neg/pos):
+            train_sample = pos_train_X + neg_train_X[stop:stop + pos], pos_train_Y + neg_train_Y[stop:stop + pos]
+            stop = stop + pos
+            dataset = (train_sample, validation_dataset)
+            results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
+    elif pos/neg >= 2:
+        stop = 0
+        results = []
+        for i in range (pos/neg):
+            train_sample = pos_train_X[stop:stop + neg] + neg_train_X, pos_train_Y[stop:stop + neg] + neg_train_Y
+            stop = stop + neg
+            dataset = (train_sample, validation_dataset)
+            results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
+    
+    else:
+        dataset = (training_dataset, validation_dataset)
+        return fit_score_classifier(arguments, classifier_type, dataset, validation_weights)
+        
+    result = results[0]
+    count = 1
+    
+    for r in range(1,len(results)):
+        for k in results[r]:
+            result[k]+=results[r][k]
+            count += 1
+    for k in result:
+        result[k] /= count 
+    
     return result
 
 def fit_score_classifier(arguments, classifier_type, dataset, validation_weights=None):
@@ -171,7 +240,7 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
         classifier = classifier_type(**best_arg)
         classifier.fit(train_X, train_y)
         pred_y = classifier.predict_proba(test_X)
-        
+
         num_pos_val = sum(test_y)
         num_neg_val = len(test_y) - num_pos_val
         pos_weight, neg_weight = float(num_neg_val) / float(num_pos_val), 1
@@ -236,8 +305,8 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log):
 
         results.append(result)
     
-    log_experiment(results, output_log)
     print(results)
+    log_experiment(results, output_log)
 
     return score_arguments
 
@@ -257,6 +326,7 @@ def random_forest_experiment(dataset, output_log):
 
 def svm_experiment(dataset, output_log):
     classifier = SVC
+    folds = 5
     classifier_inputs_list = [
         {
             "kernel": ['poly'],
@@ -288,9 +358,6 @@ def svm_experiment(dataset, output_log):
             "probability": [True]
         }
     ]
-    folds = 5
-
-    print("svm dataset", sum(dataset[1]))
 
     results = []
     for classifier_inputs in classifier_inputs_list:
@@ -299,7 +366,10 @@ def svm_experiment(dataset, output_log):
 	
 def mlp_experiment(dataset, output_log):
     classifier = MLPClassifier
-    classifier_inputs_list = [{"solver": ['lbfgs'], "hidden_layer_sizes": range(10, 101, 10)}]
+    classifier_inputs_list = [{
+        "solver": ['lbfgs'],
+        "hidden_layer_sizes": range(10, 101, 10)
+    }]
     folds = 5
     results = []
     for classifier_inputs in classifier_inputs_list:
@@ -329,9 +399,8 @@ def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
     output_filename = "lxr_nobkg_results.csv"
     column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
-    random_data_filename = "top1000_rf_fingerprints.csv"
 
-    dataset = import_data(input_filename, column_names, random_data_filename=random_data_filename)
+    dataset = import_data(input_filename, column_names)
 
     random_forest_experiment(dataset, output_filename)
     # svm_experiment(dataset, output_filename)
@@ -386,9 +455,32 @@ def remove_unkekulizable(csv_file):
         for row in data:
             writer.writerow(row)
 
+
+def recompute_fingerprints(dud_raw_files, dud_smile_csv_files, dud_fingerprint_files):
+    print("building csv files from raw files")
+    for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
+        print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
+        smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
+
+    print("removing unkekulizable molecules")
+    for csv_file in dud_smile_csv_files:
+        remove_unkekulizable(csv_file)
+
+    print("computing fingerprints")
+    for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
+        print("%s -> %s " % (csv_file, fingerprint_filename))
+        with open(csv_file) as file_handle:
+            num_molecules = sum([1 for i in file_handle]) - 1
+            assert(num_molecules > 20)
+        N_train = num_molecules - 20
+        N_val = 20
+        train_val_test_split = (N_train, N_val, 0)
+
+        compute_fingerprints(train_val_test_split, fingerprint_filename, data_target_column='target', data_file=csv_file)
+
 def dud_experiment():
     dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
-    dud_datasets = ["ar"]
+    dud_datasets = ["ace"]
 
     dud_raw_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset)
         for dataset in dud_datasets]
@@ -402,27 +494,7 @@ def dud_experiment():
     make_folder("dud/results")
     make_files(dud_result_files)
 
-    # print("building csv files from raw files")
-    # for (raw_pos_file, raw_neg_file), csv_file in zip(dud_raw_files, dud_smile_csv_files):
-    #     print("%s, % s -> %s" % (raw_pos_file, raw_neg_file, csv_file))
-    #     smi_to_csv(raw_pos_file, raw_neg_file, csv_file)
-
-    # print("removing unkekulizable molecules")
-    # for csv_file in dud_smile_csv_files:
-    #     remove_unkekulizable(csv_file)
-
-    # print("computing fingerprints")
-    # from compute_fingerprint import compute_fingerprints
-    # for csv_file, fingerprint_filename in zip(dud_smile_csv_files, dud_fingerprint_files):
-    #     # print("%s -> %s " % (csv_file, fingerprint_filename))
-    #     with open(csv_file) as file_handle:
-    #         num_molecules = sum([1 for i in file_handle])-1
-    #         assert(num_molecules > 20)
-    #     N_train = num_molecules - 20
-    #     N_val = 20
-    #     train_val_test_split = (N_train, N_val, 0)
-
-    #     compute_fingerprints(train_val_test_split, fingerprint_filename, data_target_column='target', data_file=csv_file)
+    recompute_fingerprints(dud_raw_files, dud_smile_csv_files, dud_fingerprint_files)
 
     print("running fingerprint experiments")
     for fingerprint_filename, result_filename in zip(dud_fingerprint_files, dud_result_files):
@@ -438,8 +510,5 @@ def dud_experiment():
         # logreg_experiment(dataset, result_filename)
 
 if __name__ == "__main__":
-
-    # top_1000_experiment()
     # lxr_experiment()
     dud_experiment()
-
