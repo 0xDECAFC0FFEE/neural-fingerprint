@@ -41,7 +41,7 @@ def random_fetch(filename):
 
 corr = []
 gen = random_fetch("vecs_zinc.txt")
-
+roc = []
 def import_data(csv_filename, column_names):
     # column_names is dictionary mapping from the keys to column names in the file
     # expecting keys "fingerprints" and "target"
@@ -110,6 +110,8 @@ def roc_50(pred_y, true_y):
 			fpr.append(fp/n)
 		if fp >= 50:
 			break
+	if fpr[-1] == 0:
+            return 1
         return metrics.auc(fpr,tpr)/fpr[-1]
 
 def bagging(dataset, run, clf_type, arg):
@@ -182,7 +184,7 @@ def sampling(arguments, classifier_type, dataset):
     pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val),1 
 
     validation_weights = [pos_weight if i == 1 else neg_weight for i in test_y]
-
+    '''
     for fingerprint, target in zip(training_dataset[0], training_dataset[1]):
         if target == 1:
             pos_train_X.append(fingerprint)
@@ -192,7 +194,7 @@ def sampling(arguments, classifier_type, dataset):
             neg_train_Y.append(target)
     pos = len(pos_train_X)
     neg = len(neg_train_X)
-   
+    
     if neg/pos >= 2:
         stop = 0
         results = []
@@ -211,8 +213,9 @@ def sampling(arguments, classifier_type, dataset):
             results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
     
     else:
-        dataset = (training_dataset, validation_dataset)
-        return fit_score_classifier(arguments, classifier_type, dataset, validation_weights)
+    '''
+    dataset = (training_dataset, validation_dataset)
+    return fit_score_classifier(arguments, classifier_type, dataset, validation_weights)
         
     result = results[0]
     count = 1
@@ -258,12 +261,12 @@ def cv_layer_2(arguments, classifier_type, dataset, folds):
                 score = sampling(argument, classifier_type, train_val_dataset)
 
                 if max_score == None:
-                    max_score, max_arg = (score["log_loss"], argument)
+                    max_score, max_arg = (score["accuracy"], argument)
                 elif "n_estimators" in max_arg and "max_depth" in max_arg:
                     if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
                         max_score, max_arg = (score, argument)
-                elif max_score <= score["log_loss"]:
-                    max_score, max_arg = (score["log_loss"], argument)
+                elif max_score <= score["accuracy"]:
+                    max_score, max_arg = (score["accuracy"], argument)
     #print max_score                          
     return max_arg
 
@@ -286,16 +289,17 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
         dataset_layer_2 = (train_X, train_y)
         
         best_arg = cv_layer_2(arguments, classifier_type, dataset_layer_2, folds)
-        
-        #clfs = [classifier_type(**best_arg) for i in range(10)]
-        #clfs = arb_sampling("vecs_zinc.txt", clfs, (train_X, train_y))
-        #pred_y = np.array([clf.predict_proba(test_X) for clf in clfs]).mean(axis = 0).tolist()
+        '''
+        clfs = [classifier_type(**best_arg) for i in range(10)]
+        clfs = arb_sampling("vecs_zinc.txt", clfs, (train_X, train_y))
+        pred_y = np.array([clf.predict_proba(test_X) for clf in clfs]).mean(axis = 0).tolist()
         num_pos_val = sum(train_y)
         num_neg_val = len(train_y) - num_pos_val
         pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val),1
         sample_weight = [pos_weight if val == 1 else neg_weight for val in train_y]
-        clf = BaggingClassifier(classifier_type(**best_arg))
-        clf.fit(train_X, train_y, sample_weight)
+        '''
+        clf = classifier_type(**best_arg)
+        clf.fit(train_X, train_y)
         
         pred_y = clf.predict_proba(test_X)
         pred_pos = [prob[1] for prob in pred_y]
@@ -311,8 +315,10 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
         score["roc50"] = roc50[-1]
         print roc50[-1]
         argument_scores.append(copy.deepcopy((best_arg, score)))
-
-    print sum(roc50)/folds
+        
+    roc.append(sum(roc50)/folds)
+    
+    print roc[-1]
     
     return argument_scores, clf
 
@@ -442,7 +448,8 @@ def logreg_experiment(dataset, output_log):
     
     classifier_inputs_list = [{
        "solver": ['newton-cg', 'lbfgs'],
-        "C": [.001,.01,.1,.3,.6,.9],
+        "C": [.3,.6,.9,1.2],
+       "class_weight": ['balanced']
        
     }]
     folds =5
@@ -516,8 +523,8 @@ def remove_unkekulizable(csv_file):
             writer.writerow(row)
 
 def dud_experiment():
-    #dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
-    dud_datasets = ["ace"]
+    dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
+    #dud_datasets = ["ace"]
     dud_raw_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset)
         for dataset in dud_datasets]
     dud_smile_csv_files = ["dud/smiles/%s.csv"%dataset for dataset in dud_datasets]
@@ -537,6 +544,7 @@ def dud_experiment():
         column_names = {"fingerprints": "fingerprints", "target": "target"}
 
         fingerprints, targets = import_data(fingerprint_filename, column_names)
+        
         dataset = zip(fingerprints, targets)
         random.shuffle(dataset)
         sample_data = []
@@ -557,6 +565,7 @@ def dud_experiment():
         # mlp_experiment(sample_data, result_filename)
        
         logreg_experiment(sample_data, result_filename)
+        print zip(dud_datasets, roc)
     
 def bagging_experiment(clf, arg, input_filename = "lxr_nobkg_fingerprints.csv"):
     
