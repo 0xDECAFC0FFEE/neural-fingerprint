@@ -98,21 +98,20 @@ def roc_50(pred_y, true_y):
 			n +=1.0
 	y.sort(key = lambda f: f[0], reverse = True)
 	tp,fp = 0,0
-	fpr,tpr = [],[]
+	fpr,tpr = [0.0],[0.0]
 	for pred,target in y:
-		if pred >=0.5 and target == 1:
+		if target == 1:
 			tp +=1.0
 			tpr.append(tp/p)
 			fpr.append(fp/n)
-		elif pred >=0.5 and target == 0:
+		else:
 			fp +=1.0
 			tpr.append(tp/p)
 			fpr.append(fp/n)
 		if fp >= 50:
 			break
-	if fpr[-1] == 0:
-            return 1
-        return metrics.auc(fpr,tpr)/fpr[-1]
+	score =metrics.auc(fpr,tpr)/fpr[-1]
+        return score
 
 def bagging(dataset, run, clf_type, arg):
 
@@ -298,7 +297,7 @@ def cv_layer_1(arguments, classifier_type, dataset, folds):
         pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val),1
         sample_weight = [pos_weight if val == 1 else neg_weight for val in train_y]
         '''
-        clf = classifier_type(**best_arg)
+        clf = BaggingClassifier(classifier_type(**best_arg))
         clf.fit(train_X, train_y)
         
         pred_y = clf.predict_proba(test_X)
@@ -432,7 +431,8 @@ def mlp_experiment(dataset, output_log):
     classifier = MLPClassifier
     classifier_inputs_list = [{
                 "solver": ['lbfgs'],
-        "hidden_layer_sizes": range(10, 101, 10)
+        "hidden_layer_sizes": [10],
+        "alpha": [.0001,.001,.01,.1,10,100]
     }]
     folds = 5
     results = []
