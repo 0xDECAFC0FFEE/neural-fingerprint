@@ -464,7 +464,8 @@ def mlp_experiment(dataset, output_log):
     classifier = MLPClassifier
     clf_args_config_list = [{
                 "solver": ['lbfgs'],
-        "hidden_layer_sizes": range(10, 101, 10)
+        "hidden_layer_sizes": [10],
+        "alpha": [.0001, .001, .01, .1,10,100]
     }]
     non_clf_arguments = {
         "cv1_folds": 5,
