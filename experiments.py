@@ -146,7 +146,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         "MCC": mcc,
         "log_loss": weighted_log_loss,
         "f1": f1,
-        "target": f1,
+        "target":f1,
         "roc50": roc50,
     }
 
@@ -258,11 +258,11 @@ def cv_layer_2(arguments, classifier_type, dataset, folds, sample=False):
     skf = StratifiedKFold(n_splits = folds, shuffle = True)
 
     max_score, max_arg = None, None
-    for train_index, test_index in tqdm(list(skf.split(fingerprints, targets)), position=1, leave=False):
+    for train_index, test_index in list(skf.split(fingerprints, targets)):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
-        for argument in tqdm(arguments, position=2, leave=False):
+        for argument in arguments:
             random.seed(datetime.now())
             argument["random_state"] = random.randint(0, 9999999)
             
@@ -288,27 +288,31 @@ def cv_layer_2(arguments, classifier_type, dataset, folds, sample=False):
     return max_arg
 
 
-def cv_layer_1(arguments, classifier_type, dataset, folds, sample=False):
+def cv_layer_1(arguments, classifier_type, dataset, folds, sample=False, bagging=False):
     print("running %s experiment" % classifier_type.__name__)
     fingerprints, targets = dataset
 
     skf = StratifiedKFold(n_splits = folds, shuffle = True)
     argument_scores = []
-    for train_index, test_index in tqdm(list(skf.split(fingerprints, targets)), position=0, leave=False):
+    for train_index, test_index in list(skf.split(fingerprints, targets)):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
         dataset_layer_2 = (train_X, train_y)
         
         best_arg = cv_layer_2(arguments, classifier_type, dataset_layer_2, folds, sample)
-        clf = classifier_type(**best_arg)
+        
+        if bagging:
+            clf = BaggingClassifier(classifier_type(**best_arg))
+        else:
+            clf = classifier_type(**best_arg)
         clf.fit(train_X, train_y)
 
         pred_y = clf.predict_proba(test_X)
         
         validation_weights = compute_validation_weights(test_y)
         
-        score = interpret_score(pred_y, test_y, validation_weights=validation_weights, show_roc=True)
+        score = interpret_score(pred_y, test_y, validation_weights=validation_weights, show_roc=False)
 
         argument_scores.append(copy.deepcopy((best_arg, score)))
 
@@ -342,7 +346,7 @@ def log_experiment(results, filename):
         for line in data:
             csv_writer.writerow(line)
 
-def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, sample=False):
+def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, sample=False, bagging=False):
     """ 
         generalized experimental setup for the various classifier types
         automatically computes all possible classifier arguments from the ranges given
@@ -360,7 +364,7 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, s
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
         arguments.append(classifier_argument)
     
-    score_arguments, clf = cv_layer_1(arguments, classifier_type, dataset, folds, sample)
+    score_arguments, clf = cv_layer_1(arguments, classifier_type, dataset, folds, sample, bagging)
 
     results = []
     for score, argument in score_arguments:
@@ -431,7 +435,7 @@ def svm_experiment(dataset, output_log):
         results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=False))
     return results
 	
-def mlp_experiment(dataset, output_log):
+def mlp_experiment(dataset, output_log, bagging=False):
     classifier = MLPClassifier
     classifier_inputs_list = [{
                 "solver": ['lbfgs'],
@@ -442,12 +446,12 @@ def mlp_experiment(dataset, output_log):
     results = []
     clfs = []
     for classifier_inputs in classifier_inputs_list:
-        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True)
+        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True, bagging=bagging)
         results.extend(output)
         clfs.append(clf)
     return results, clfs
     
-def logreg_experiment(dataset, output_log):
+def logreg_experiment(dataset, output_log, bagging=False):
     classifier = LogisticRegression
     
     classifier_inputs_list = [{
@@ -460,7 +464,7 @@ def logreg_experiment(dataset, output_log):
     results = []
     clfs = []
     for classifier_inputs in classifier_inputs_list:
-        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True)
+        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True, bagging=bagging)
         results.extend(output)
         clfs.append(clf)
     return results, clfs
@@ -473,9 +477,9 @@ def lxr_experiment():
 
     dataset = import_data(input_filename, column_names, random_data_filename=random_data_filename)
 
-    random_forest_experiment(dataset, output_filename)
+    # random_forest_experiment(dataset, output_filename)
     # svm_experiment(dataset, output_filename)
-    # mlp_experiment(dataset, output_filename)
+    mlp_experiment(dataset, output_filename)
     # logreg_experiment(dataset, output_filename)
 
 def smi_to_csv(pos_file, neg_file, output_file):
@@ -561,7 +565,7 @@ def dud_experiment():
     dud_fingerprint_files = ["dud/fingerprints/%s.csv"%dataset for dataset in dud_datasets]
     make_folder("dud/fingerprints")
     make_files(dud_fingerprint_files)
-    dud_result_files = ["dud/results/%s.csv"%dataset for dataset in dud_datasets]
+    dud_result_files = ["dud/results/NN_REG_%s.csv"%dataset for dataset in dud_datasets]
     make_folder("dud/results")
     make_files(dud_result_files)
 
@@ -574,10 +578,10 @@ def dud_experiment():
 
         dataset = import_data(fingerprint_filename, column_names)
 
-        random_forest_experiment(dataset, result_filename)
+        # random_forest_experiment(dataset, result_filename)
         # svm_experiment(dataset, result_filename)
-        # mlp_experiment(dataset, result_filename)
-        # logreg_experiment(dataset, result_filename)
+        mlp_experiment(dataset, result_filename)
+        logreg_experiment(dataset, result_filename)
 
 def bagging_experiment(clf, arg, input_filename = "lxr_nobkg_fingerprints.csv"):
     
