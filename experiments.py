@@ -16,6 +16,7 @@ from rdkit.Chem import MolFromSmiles
 from tqdm import tqdm
 import numpy as np
 import random
+import time
 from datetime import datetime
 import copy
 import os
@@ -23,7 +24,7 @@ import matplotlib.pyplot as plt
 from scipy.stats.stats import pearsonr
 from pprint import pprint
 from sklearn.metrics import roc_curve, roc_auc_score
-
+random.seed(datetime.now())
 def import_random_data(random_data_filename, dataset):
     if random_data_filename:
         fingerprints, targets = dataset
@@ -145,7 +146,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
     TN = sum([1 for test, pred in zip(test_y, pred_y) if test == pred and pred == 0])
     FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
     accuracy = float(TP+TN) / float(TP+FP+TN+FN)
-    mcc = matthews_corrcoef(test_y, pred_y)
+    # mcc = matthews_corrcoef(test_y, pred_y)
     
     weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
 
@@ -160,7 +161,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         "TN": TN,
         "FP": FP,
         "FN": FN,
-        "MCC": mcc,
+        # "MCC": mcc,
         "log_loss": weighted_log_loss,
         "f1": f1,
         "target": f1,
@@ -168,11 +169,8 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         "rocNOT50": roc,
     }
 
-    if show_roc:
-        print(result)
-        print(test_y)
-        print(pred_y_proba)
-        show_roc_plot(test_y, pred_y_proba, roc50_break)
+    # if show_roc:
+        # show_roc_plot(test_y, pred_y_proba, roc50_break)
 
     return result
 
@@ -271,41 +269,54 @@ def fit_score_classifier(arguments, clf_type, dataset, validation_weights=None):
     
     return score
 
+def max_result_argument(res_arg_1, res_arg_2):
+    result_1, arg_1 = res_arg_1
+    result_2, arg_2 = res_arg_2
+
+    if result_1 == None:
+        return res_arg_2
+    elif result_2 == None:
+        return res_arg_1
+    
+    score_1 = result_1["target"]
+    score_2 = result_2["target"]
+
+    if score_1 < score_2:
+        return res_arg_2
+    elif score_2 < score_1:
+        return res_arg_1
+    else:
+        if "n_estimators" in arg_1 and "max_depth" in arg_1 and "n_estimators" in arg_2 and "max_depth" in arg_2:
+            if arg_1["n_estimators"] + arg_1["max_depth"] > arg_2["n_estimators"] + arg_2["max_depth"]:
+                return res_arg_2
+            else:
+                return res_arg_1
+        else:
+            return res_arg_1
+    
 
 def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
     fingerprints, targets = dataset
 
     skf = StratifiedKFold(n_splits=non_clf_arguments["cv2_folds"], shuffle=True)
 
-    max_score, max_arg = None, None
-    for train_index, test_index in tqdm(list(skf.split(fingerprints, targets)), position=1, leave=False):
+    max_res_arg = (None, None)
+    for train_index, test_index in tqdm([list(skf.split(fingerprints, targets))[0]], position=1, leave=False):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
         for clf_argument in tqdm(clf_arguments, position=2, leave=False):
-            random.seed(datetime.now())
             clf_argument["random_state"] = random.randint(0, 9999999)
             
             train_val_dataset = ((train_X, train_y), (test_X, test_y))
             
             if non_clf_arguments["sample"]:
-                score = sampling(clf_argument, clf_type, train_val_dataset)
+                result = sampling(clf_argument, clf_type, train_val_dataset)
             else:
-                score = fit_score_classifier(clf_argument, clf_type, train_val_dataset)
+                result = fit_score_classifier(clf_argument, clf_type, train_val_dataset)
 
-            cur_score = score["target"]
-
-            if max_score == None:
-                max_score, max_arg = (cur_score, clf_argument)
-            elif "n_estimators" in max_arg and "max_depth" in max_arg and "n_estimators" in clf_argument and "max_depth" in clf_argument:
-                if max_score < cur_score:
-                    max_score, max_arg = (cur_score, clf_argument)
-                elif max_score == cur_score:
-                    if max_arg["n_estimators"] + max_arg["max_depth"] > clf_argument["n_estimators"] + clf_argument["max_depth"]:
-                        max_score, max_arg = (cur_score, clf_argument)
-            elif max_score <= cur_score:
-                max_score, max_arg = (cur_score, clf_argument)
-    return max_arg
+            max_res_arg = max_result_argument(max_res_arg, (result, clf_argument))
+    return max_res_arg
 
 
 def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
@@ -313,14 +324,13 @@ def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
     fingerprints, targets = dataset
 
     skf = StratifiedKFold(n_splits=non_clf_arguments["cv1_folds"], shuffle = True)
-    argument_scores = []
     for train_index, test_index in tqdm(list(skf.split(fingerprints, targets)), position=0, leave=False):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
         dataset_layer_2 = (train_X, train_y)
         
-        best_arg = cv_layer_2(clf_arguments, clf_type, dataset_layer_2, non_clf_arguments)
+        _, best_arg = cv_layer_2(clf_arguments, clf_type, dataset_layer_2, non_clf_arguments)
         clf = clf_type(**best_arg)
         clf.fit(train_X, train_y)
 
@@ -330,9 +340,7 @@ def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
         
         score = interpret_score(pred_y, test_y, validation_weights=validation_weights, show_roc=True)
 
-        argument_scores.append(copy.deepcopy((best_arg, score)))
-
-    return argument_scores, clf
+        yield copy.deepcopy((score, best_arg))
 
 def log_experiment(results, filename):
     
@@ -348,9 +356,13 @@ def log_experiment(results, filename):
             header = []
             data = []
 
-    time = datetime.now()
     for result in results:
-        result["timestamp"] = time
+        result["timestamp"] = time.strftime("%Y-%m-%d %H:%M")
+        try:
+            result["batch_num"] = log_experiment.batch_number
+        except:
+            log_experiment.batch_number = random.randint(0, 9999)
+            result["batch_num"] = log_experiment.batch_number
 
     result_keys_not_in_header = [key for key in results[0].keys() if key not in header]
     header = header + result_keys_not_in_header
@@ -361,7 +373,6 @@ def log_experiment(results, filename):
         csv_writer.writeheader()
         for line in data:
             csv_writer.writerow(line)
-
 
 def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log):
     """ 
@@ -381,20 +392,18 @@ def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
         clf_arguments.append(classifier_argument)
     
-    score_arguments, clf = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments)
+    score_arguments = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments)
 
-    results = []
     for score, argument in score_arguments:
         result = dict(**score)
         result.update(**argument)
         result["classifier"] = clf_type.__name__
-
-        results.append(result)
+        result["classifier_arguments"] = argument
+        log_experiment([result], output_log)
     
-    print(results)
-    log_experiment(results, output_log)
+        print("\n\n %s \n" % result)
 
-    return score_arguments, clf
+    return score_arguments
 
 
 def random_forest_experiment(dataset, output_log):
@@ -452,8 +461,6 @@ def svm_experiment(dataset, output_log):
         "cv2_folds": 5,
         "sample": False
     }
-
-    print("svm dataset", sum(dataset[1]))
 
     results = []
     for clf_args_config in clf_args_config_list:
@@ -610,8 +617,8 @@ def dud_experiment():
 
         dataset = import_data(fingerprint_filename, column_names)
 
-        random_forest_experiment(dataset, result_filename)
-        # svm_experiment(dataset, result_filename)
+        # random_forest_experiment(dataset, result_filename)
+        svm_experiment(dataset, result_filename)
         # mlp_experiment(dataset, result_filename)
         # logreg_experiment(dataset, result_filename)
 
