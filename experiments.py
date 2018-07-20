@@ -22,9 +22,40 @@ import os
 import matplotlib.pyplot as plt
 from scipy.stats.stats import pearsonr
 from pprint import pprint
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, roc_auc_score
 
-roc = []
+def import_random_data(random_data_filename, dataset):
+    if random_data_filename:
+        fingerprints, targets = dataset
+        
+        with open(random_data_filename) as random_data:
+            reader = csv.DictReader(random_data)
+            all_random_fingerprints = [line["fingerprints"] for line in reader]
+        
+        random.shuffle(all_random_fingerprints)
+        random_fingerprints = list(all_random_fingerprints[:1000])
+        
+        fingerprints.extend(random_fingerprints)
+        targets.extend([0 for _ in range(len(random_fingerprints))])
+
+        dataset = fingerprints, targets
+    return dataset
+
+def import_cutoff(dataset):
+    fingerprints, targets = dataset
+    dataset = list(zip(fingerprints, targets))
+
+    pos_dataset = [d for d in dataset if d[1] == 1][:750]
+    neg_dataset = [d for d in dataset if d[1] == 0][:750]
+
+    dataset = pos_dataset + neg_dataset
+    random.shuffle(dataset)
+    
+    fingerprints = [d[0] for d in dataset]
+    targets = [d[1] for d in dataset]
+    
+    return fingerprints, targets
+
 def import_data(csv_filename, column_names, random_data_filename=None, unique=True, cutoff=True):
     """
     column_names is dictionary mapping from the keys to column names in the file. 
@@ -49,39 +80,24 @@ def import_data(csv_filename, column_names, random_data_filename=None, unique=Tr
         fingerprints = [ast.literal_eval(fingerprint) for fingerprint in fingerprints]
         targets = [ast.literal_eval(target) for target in targets]
 
-        if random_data_filename:
-            with open(random_data_filename) as random_data:
-                reader = csv.DictReader(random_data)
-                all_random_fingerprints = [
-                    line["fingerprints"] for line in reader]
-            random.shuffle(all_random_fingerprints)
-            random_fingerprints = list(all_random_fingerprints[:1000])
-            fingerprints.extend(random_fingerprints)
-            targets.extend([0 for _ in range(len(random_fingerprints))])
+        dataset = (fingerprints, targets)
+        dataset = import_random_data(random_data_filename, dataset)
 
         if cutoff:
-            dataset = list(zip(fingerprints, targets))
+            dataset = import_cutoff(dataset)
 
-            pos_dataset = [d for d in dataset if d[1] == 1][:750]
-            neg_dataset = [d for d in dataset if d[1] == 0][:750]
-
-            dataset = pos_dataset + neg_dataset
-            random.shuffle(dataset)
-            
-            fingerprints = [d[0] for d in dataset]
-            targets = [d[1] for d in dataset]
-
-        return (fingerprints, targets)
+        return dataset
 
 
 def show_roc_plot(test_y, pred_y_proba, roc_50_break):
     pred_max_y_proba = [i[1] for i in pred_y_proba]
+    break_location = roc_50_break / float(len(pred_y_proba))
+    
     fpr, tpr, _ = roc_curve(test_y, pred_max_y_proba)
     plt.figure()
     lw = 2
     plt.plot(fpr, tpr, color='darkorange', lw=lw)
     plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-    break_location = roc_50_break / float(len(pred_y_proba))
     plt.plot([break_location, break_location], [0, 1], color='red', lw=lw, linestyle='--')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
@@ -114,8 +130,8 @@ def compute_roc50(pred_y_proba, pred_y, test_y):
     pred_y_proba_50 = [i[0] for i in ranking[:roc_50_break]]
     test_y_50 = [i[2] for i in ranking[:roc_50_break]]
 
-    fpr_50, tpr_50, _ = roc_curve(test_y_50, pred_y_proba_50)
-    roc50 = auc(fpr_50, tpr_50)
+    roc50 = roc_auc_score(test_y_50, pred_y_proba_50)
+
     return roc50, roc_50_break
 
 def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, show_roc=False):
@@ -136,6 +152,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
     f1 = f1_score(test_y, pred_y, sample_weight=validation_weights)
 
     roc50, roc50_break = compute_roc50(pred_y_proba, pred_y, test_y)
+    roc = roc_auc_score(test_y, [i[1] for i in pred_y_proba])
     
     result =  {
         "accuracy": accuracy,
@@ -148,10 +165,13 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
         "f1": f1,
         "target":f1,
         "roc50": roc50,
+        "rocNOT50": roc,
     }
 
     if show_roc:
         print(result)
+        print(test_y)
+        print(pred_y_proba)
         show_roc_plot(test_y, pred_y_proba, roc50_break)
 
     return result
@@ -241,10 +261,10 @@ def sampling(arguments, classifier_type, dataset):
     
     return result
 
-def fit_score_classifier(arguments, classifier_type, dataset, validation_weights=None):
+def fit_score_classifier(arguments, clf_type, dataset, validation_weights=None):
     ((train_X, train_y), (test_X, test_y)) = dataset
     
-    classifier = classifier_type(**arguments)
+    classifier = clf_type(**arguments)
     classifier.fit(train_X, train_y)
     pred_y = classifier.predict_proba(test_X)
     score = interpret_score(pred_y, test_y, validation_weights=validation_weights)
@@ -252,47 +272,52 @@ def fit_score_classifier(arguments, classifier_type, dataset, validation_weights
     return score
 
 
-def cv_layer_2(arguments, classifier_type, dataset, folds, sample=False):
+def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
     fingerprints, targets = dataset
 
-    skf = StratifiedKFold(n_splits = folds, shuffle = True)
+    skf = StratifiedKFold(n_splits=non_clf_arguments["cv2_folds"], shuffle=True)
 
     max_score, max_arg = None, None
     for train_index, test_index in list(skf.split(fingerprints, targets)):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
-        for argument in arguments:
+<<<<<<< HEAD
+        for clf_argument in tqdm(clf_arguments, position=2, leave=False):
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
             random.seed(datetime.now())
-            argument["random_state"] = random.randint(0, 9999999)
+            clf_argument["random_state"] = random.randint(0, 9999999)
             
             train_val_dataset = ((train_X, train_y), (test_X, test_y))
             
-            if sample:
-                score = sampling(argument, classifier_type, train_val_dataset)
+            if non_clf_arguments["sample"]:
+                score = sampling(clf_argument, clf_type, train_val_dataset)
             else:
-                score = fit_score_classifier(argument, classifier_type, train_val_dataset)
+                score = fit_score_classifier(clf_argument, clf_type, train_val_dataset)
 
             cur_score = score["target"]
 
             if max_score == None:
-                max_score, max_arg = (cur_score, argument)
-            elif "n_estimators" in max_arg and "max_depth" in max_arg and "n_estimators" in argument and "max_depth" in argument:
+                max_score, max_arg = (cur_score, clf_argument)
+            elif "n_estimators" in max_arg and "max_depth" in max_arg and "n_estimators" in clf_argument and "max_depth" in clf_argument:
                 if max_score < cur_score:
-                    max_score, max_arg = (cur_score, argument)
+                    max_score, max_arg = (cur_score, clf_argument)
                 elif max_score == cur_score:
-                    if max_arg["n_estimators"] + max_arg["max_depth"] > argument["n_estimators"] + argument["max_depth"]:
-                        max_score, max_arg = (cur_score, argument)
+                    if max_arg["n_estimators"] + max_arg["max_depth"] > clf_argument["n_estimators"] + clf_argument["max_depth"]:
+                        max_score, max_arg = (cur_score, clf_argument)
             elif max_score <= cur_score:
-                max_score, max_arg = (cur_score, argument)
+                max_score, max_arg = (cur_score, clf_argument)
     return max_arg
 
 
-def cv_layer_1(arguments, classifier_type, dataset, folds, sample=False, bagging=False):
-    print("running %s experiment" % classifier_type.__name__)
+<<<<<<< HEAD
+
+def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments, bagging=False):
+    print("running %s experiment" % clf_type.__name__)
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
     fingerprints, targets = dataset
 
-    skf = StratifiedKFold(n_splits = folds, shuffle = True)
+    skf = StratifiedKFold(n_splits=non_clf_arguments["cv1_folds"], shuffle = True)
     argument_scores = []
     for train_index, test_index in list(skf.split(fingerprints, targets)):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
@@ -300,12 +325,13 @@ def cv_layer_1(arguments, classifier_type, dataset, folds, sample=False, bagging
 
         dataset_layer_2 = (train_X, train_y)
         
-        best_arg = cv_layer_2(arguments, classifier_type, dataset_layer_2, folds, sample)
-        
+<<<<<<< HEAD
+        best_arg = cv_layer_2(clf_arguments, clf_type, dataset_layer_2, non_clf_arguments)
         if bagging:
-            clf = BaggingClassifier(classifier_type(**best_arg))
+            clf = BaggingClassifier(clf_type(**best_arg))
         else:
-            clf = classifier_type(**best_arg)
+            clf = clf_type(**best_arg)
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
         clf.fit(train_X, train_y)
 
         pred_y = clf.predict_proba(test_X)
@@ -346,7 +372,10 @@ def log_experiment(results, filename):
         for line in data:
             csv_writer.writerow(line)
 
-def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, sample=False, bagging=False):
+<<<<<<< HEAD
+
+def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log, bagging=False):
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
     """ 
         generalized experimental setup for the various classifier types
         automatically computes all possible classifier arguments from the ranges given
@@ -355,22 +384,24 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, s
     print("negatives: ", len(dataset[1]) - sum(dataset[1]))
 
 
-    arg_names = classifier_inputs.keys()
-    arg_ranges = classifier_inputs.values()
+    arg_names = clf_args_config.keys()
+    arg_ranges = clf_args_config.values()
 
-    arguments = []
+    clf_arguments = []
     for arg_vals in product(*arg_ranges):
         classifier_argument = zip(arg_names, arg_vals)
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
-        arguments.append(classifier_argument)
+        clf_arguments.append(classifier_argument)
     
-    score_arguments, clf = cv_layer_1(arguments, classifier_type, dataset, folds, sample, bagging)
+<<<<<<< HEAD
+    score_arguments, clf = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments, bagging)
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
 
     results = []
     for score, argument in score_arguments:
         result = dict(**score)
         result.update(**argument)
-        result["classifier"] = classifier_type.__name__
+        result["classifier"] = clf_type.__name__
 
         results.append(result)
     
@@ -382,20 +413,24 @@ def experiment(dataset, classifier_type, classifier_inputs, folds, output_log, s
 
 def random_forest_experiment(dataset, output_log):
     classifier = RandomForestClassifier
-    classifier_inputs = {
+    clf_args_config = {
         "max_depth": range(1, 101, 20),
         "n_estimators": range(1, 101, 20),
         "class_weight": ["balanced_subsample"],
         "n_jobs": [-1]
     }
-    folds = 5
+    non_clf_arguments = {
+        "cv1_folds": 5,
+        "cv2_folds": 5,
+        "sample": False
+    }
 
-    return experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=False)
+    return experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log)
 
 
 def svm_experiment(dataset, output_log):
     classifier = SVC
-    classifier_inputs_list = [
+    clf_args_config_list = [
         {
             "kernel": ['poly'],
             "degree": range(2, 3),
@@ -426,27 +461,37 @@ def svm_experiment(dataset, output_log):
             "probability": [True]
         }
     ]
-    folds = 5
+    non_clf_arguments = {
+        "cv1_folds": 5,
+        "cv2_folds": 5,
+        "sample": False
+    }
 
     print("svm dataset", sum(dataset[1]))
 
     results = []
-    for classifier_inputs in classifier_inputs_list:
-        results.extend(experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=False))
+    for clf_args_config in clf_args_config_list:
+        results.extend(experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log))
     return results
 	
 def mlp_experiment(dataset, output_log, bagging=False):
     classifier = MLPClassifier
-    classifier_inputs_list = [{
+    clf_args_config_list = [{
                 "solver": ['lbfgs'],
         "hidden_layer_sizes": [10],
         "alpha": [.0001, .001, .01, .1,10,100]
     }]
-    folds = 5
+    non_clf_arguments = {
+        "cv1_folds": 5,
+        "cv2_folds": 5,
+        "sample": True
+    }
     results = []
     clfs = []
-    for classifier_inputs in classifier_inputs_list:
-        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True, bagging=bagging)
+<<<<<<< HEAD
+    for clf_args_config in clf_args_config_list:
+        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log, bagging=bagging)
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
         results.extend(output)
         clfs.append(clf)
     return results, clfs
@@ -454,17 +499,22 @@ def mlp_experiment(dataset, output_log, bagging=False):
 def logreg_experiment(dataset, output_log, bagging=False):
     classifier = LogisticRegression
     
-    classifier_inputs_list = [{
+    clf_args_config_list = [{
        "solver": ['newton-cg', 'lbfgs'],
         "C": [.3,.6,.9,1.2],
        "class_weight": ['balanced']
-       
     }]
-    folds =5
+    non_clf_arguments = {
+        "cv1_folds": 5,
+        "cv2_folds": 5,
+        "sample": True
+    }
     results = []
     clfs = []
-    for classifier_inputs in classifier_inputs_list:
-        output, clf = experiment(dataset, classifier, classifier_inputs, folds, output_log, sample=True, bagging=bagging)
+<<<<<<< HEAD
+    for clf_args_config in clf_args_config_list:
+        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log, bagging=bagging)
+>>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
         results.extend(output)
         clfs.append(clf)
     return results, clfs
