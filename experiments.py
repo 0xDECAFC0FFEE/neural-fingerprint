@@ -282,9 +282,9 @@ def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
         train_X, test_X = np.array(fingerprints)[train_index], np.array(fingerprints)[test_index]
         train_y, test_y = np.array(targets)[train_index], np.array(targets)[test_index]
 
-<<<<<<< HEAD
+
         for clf_argument in tqdm(clf_arguments, position=2, leave=False):
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+
             random.seed(datetime.now())
             clf_argument["random_state"] = random.randint(0, 9999999)
             
@@ -310,11 +310,11 @@ def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
     return max_arg
 
 
-<<<<<<< HEAD
 
-def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments, bagging=False):
+
+def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
     print("running %s experiment" % clf_type.__name__)
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+    
     fingerprints, targets = dataset
 
     skf = StratifiedKFold(n_splits=non_clf_arguments["cv1_folds"], shuffle = True)
@@ -325,13 +325,13 @@ def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments, bagging=Fals
 
         dataset_layer_2 = (train_X, train_y)
         
-<<<<<<< HEAD
+
         best_arg = cv_layer_2(clf_arguments, clf_type, dataset_layer_2, non_clf_arguments)
-        if bagging:
+        if non_clf_arguments["bagging"]:
             clf = BaggingClassifier(clf_type(**best_arg))
         else:
             clf = clf_type(**best_arg)
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+
         clf.fit(train_X, train_y)
 
         pred_y = clf.predict_proba(test_X)
@@ -372,10 +372,10 @@ def log_experiment(results, filename):
         for line in data:
             csv_writer.writerow(line)
 
-<<<<<<< HEAD
 
-def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log, bagging=False):
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+
+def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log):
+
     """ 
         generalized experimental setup for the various classifier types
         automatically computes all possible classifier arguments from the ranges given
@@ -393,9 +393,9 @@ def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
         clf_arguments.append(classifier_argument)
     
-<<<<<<< HEAD
-    score_arguments, clf = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments, bagging)
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+
+    score_arguments, clf = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments)
+
 
     results = []
     for score, argument in score_arguments:
@@ -484,14 +484,15 @@ def mlp_experiment(dataset, output_log, bagging=False):
     non_clf_arguments = {
         "cv1_folds": 5,
         "cv2_folds": 5,
-        "sample": True
+        "sample": True,
+        "bagging": bagging
     }
     results = []
     clfs = []
-<<<<<<< HEAD
+
     for clf_args_config in clf_args_config_list:
-        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log, bagging=bagging)
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log)
+
         results.extend(output)
         clfs.append(clf)
     return results, clfs
@@ -507,14 +508,15 @@ def logreg_experiment(dataset, output_log, bagging=False):
     non_clf_arguments = {
         "cv1_folds": 5,
         "cv2_folds": 5,
-        "sample": True
+        "sample": True,
+        "bagging": bagging
     }
     results = []
     clfs = []
-<<<<<<< HEAD
+
     for clf_args_config in clf_args_config_list:
-        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log, bagging=bagging)
->>>>>>> 725c55113df88a7450c95d4c0db757920b9f933c
+        output, clf = experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log)
+
         results.extend(output)
         clfs.append(clf)
     return results, clfs
