@@ -33,14 +33,14 @@ np.set_printoptions(linewidth=2000)
 def import_random_data(random_data_filename, dataset):
     if random_data_filename:
         fingerprints, targets = dataset
-        
+
         with open(random_data_filename) as random_data:
             reader = csv.DictReader(random_data)
             all_random_fingerprints = [line["fingerprints"] for line in reader]
-        
+
         random.shuffle(all_random_fingerprints)
         random_fingerprints = list(all_random_fingerprints[:1000])
-        
+
         fingerprints.extend(random_fingerprints)
         targets.extend([0 for _ in range(len(random_fingerprints))])
 
@@ -56,15 +56,15 @@ def import_cutoff(dataset):
 
     dataset = pos_dataset + neg_dataset
     random.shuffle(dataset)
-    
+
     fingerprints = [d[0] for d in dataset]
     targets = [d[1] for d in dataset]
-    
+
     return fingerprints, targets
 
 def import_data(csv_filename, column_names, random_data_filename=None, unique=True, cutoff=True):
     """
-    column_names is dictionary mapping from the keys to column names in the file. 
+    column_names is dictionary mapping from the keys to column names in the file.
     expecting keys "fingerprints" and "target" in column_names
     random data filename is a file of random false fingerprints. if not none, will add 1000 random negative examples.
     if unique = true, importer enforces every returned fingerprint and target is unique
@@ -98,7 +98,7 @@ def import_data(csv_filename, column_names, random_data_filename=None, unique=Tr
 def show_roc_plot(test_y, pred_y_proba, roc_50_break):
     pred_max_y_proba = [i[1] for i in pred_y_proba]
     break_location = roc_50_break / float(len(pred_y_proba))
-    
+
     fpr, tpr, _ = roc_curve(test_y, pred_max_y_proba)
     plt.figure()
     lw = 2
@@ -158,7 +158,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, pred_y=None, 
     FN = sum([1 for test, pred in zip(test_y, pred_y) if test != pred and pred == 0])
     accuracy = float(TP+TN) / float(TP+FP+TN+FN)
     # mcc = matthews_corrcoef(test_y, pred_y)
-    
+
     weighted_log_loss = log_loss(test_y, pred_y_proba, sample_weight=validation_weights)
 
     f1 = f1_score(test_y, pred_y, sample_weight=validation_weights)
@@ -222,7 +222,7 @@ def sampling(arguments, classifier_type, dataset):
     test_y = validation_dataset[1]
     num_pos_val = sum(test_y)
     num_neg_val = len(test_y) - num_pos_val
-    pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val),1 
+    pos_weight, neg_weight = float(num_neg_val)/float(num_pos_val),1
 
     validation_weights = [pos_weight if i == 1 else neg_weight for i in test_y]
     '''
@@ -235,7 +235,7 @@ def sampling(arguments, classifier_type, dataset):
             neg_train_Y.append(target)
     pos = len(pos_train_X)
     neg = len(neg_train_X)
-    
+
     if neg/pos >= 2:
         stop = 0
         results = []
@@ -252,33 +252,33 @@ def sampling(arguments, classifier_type, dataset):
             stop = stop + neg
             dataset = (train_sample, validation_dataset)
             results.append(fit_score_classifier(arguments, classifier_type, dataset, validation_weights))
-    
+
     else:
     '''
     dataset = (training_dataset, validation_dataset)
     return fit_score_classifier(arguments, classifier_type, dataset, validation_weights)
-        
+
     result = results[0]
     count = 1
-    
+
     for r in range(1,len(results)):
         for k in results[r]:
             result[k]+=results[r][k]
             count += 1
     for k in result:
-        result[k] /= count 
-    
+        result[k] /= count
+
     return result
 
 def fit_score_classifier(arguments, clf_type, dataset, validation_weights=None):
     ((train_X, train_y), (test_X, test_y)) = dataset
-    
+
     classifier = clf_type(**arguments)
     # print("fitting %s" % str(arguments))
     classifier.fit(train_X, train_y)
     pred_y = classifier.predict_proba(test_X)
     score = interpret_score(pred_y, test_y, validation_weights=validation_weights)
-    
+
     return score
 
 def max_result_argument(res_arg_1, res_arg_2, target_colname):
@@ -289,7 +289,7 @@ def max_result_argument(res_arg_1, res_arg_2, target_colname):
         return res_arg_2
     elif result_2 == None:
         return res_arg_1
-    
+
     score_1 = result_1[target_colname]
     score_2 = result_2[target_colname]
 
@@ -311,7 +311,7 @@ def max_result_argument(res_arg_1, res_arg_2, target_colname):
                     return res_arg_1
         else:
             return res_arg_1
-    
+
 
 def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
     fingerprints, targets = dataset
@@ -326,9 +326,9 @@ def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
 
         for clf_argument in tqdm(clf_arguments, position=2, leave=False):
             clf_argument["random_state"] = random.randint(0, 9999999)
-            
+
             train_val_dataset = ((train_X, train_y), (test_X, test_y))
-            
+
             if non_clf_arguments["sample"]:
                 result = sampling(clf_argument, clf_type, train_val_dataset)
             else:
@@ -340,7 +340,7 @@ def cv_layer_2(clf_arguments, clf_type, dataset, non_clf_arguments):
 
 def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
     print("running %s experiment" % clf_type.__name__)
-    
+
     fingerprints, targets = dataset
 
     skf = StratifiedKFold(n_splits=non_clf_arguments["cv1_folds"], shuffle = True)
@@ -359,9 +359,9 @@ def cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments):
         clf.fit(train_X, train_y)
 
         pred_y = clf.predict_proba(test_X)
-        
+
         validation_weights = compute_validation_weights(test_y)
-        
+
         score = interpret_score(pred_y, test_y, validation_weights=validation_weights, show_roc=True)
 
         yield copy.deepcopy((score, best_arg))
@@ -393,7 +393,7 @@ def log_experiment(results, filename, default_header=[], overwrite=False, copy_r
     keys_to_add = set(results[0].keys()+default_header)
     result_keys_not_in_header = [key for key in keys_to_add if key not in header]
     result_keys_not_in_header = sorted(result_keys_not_in_header)
-    
+
     header = header + result_keys_not_in_header
     data = data + results
 
@@ -405,7 +405,7 @@ def log_experiment(results, filename, default_header=[], overwrite=False, copy_r
 
 def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log):
 
-    """ 
+    """
         generalized experimental setup for the various classifier types
         automatically computes all possible classifier arguments from the ranges given
     """
@@ -421,7 +421,7 @@ def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log
         classifier_argument = zip(arg_names, arg_vals)
         classifier_argument = {arg_name: arg_val for arg_name, arg_val in classifier_argument}
         clf_arguments.append(classifier_argument)
-    
+
     score_arguments = cv_layer_1(clf_arguments, clf_type, dataset, non_clf_arguments)
 
     for testing_score, argument in score_arguments:
@@ -431,7 +431,7 @@ def experiment(dataset, clf_type, clf_args_config, non_clf_arguments, output_log
         result["classifier_arguments"] = argument
         result.update(**non_clf_arguments)
         log_experiment([result], output_log)
-    
+
         print("\n\n %s \n" % result)
 
     return score_arguments
@@ -467,7 +467,7 @@ def svm_experiment(dataset, output_log):
             "coef0": [0, .1, .5],
             "class_weight": ["balanced"],
             "probability": [True]
-        }, 
+        },
         {
             "kernel": ['rbf'],
             "gamma": [.02, .2, .7],
@@ -482,7 +482,7 @@ def svm_experiment(dataset, output_log):
         #     "coef0": [0, .1, .5],
         #     "class_weight": ["balanced"],
         #     "probability": [True]
-        # }, 
+        # },
         # {
         #     "kernel": ['linear'],
         #     # "C": [1, .5, .1],
@@ -504,7 +504,7 @@ def svm_experiment(dataset, output_log):
     for clf_args_config in clf_args_config_list:
         results.extend(experiment(dataset, classifier, clf_args_config, non_clf_arguments, output_log))
     return results
-	
+
 def mlp_experiment(dataset, output_log, bagging=False):
     classifier = MLPClassifier
     clf_args_config_list = [{
@@ -527,10 +527,10 @@ def mlp_experiment(dataset, output_log, bagging=False):
         results.extend(output)
 
     return results
-    
+
 def logreg_experiment(dataset, output_log, bagging=False):
     classifier = LogisticRegression
-    
+
     clf_args_config_list = [{
        "solver": ['newton-cg', 'lbfgs'],
         "C": [.3,.6,.9,1.2],
@@ -550,7 +550,38 @@ def logreg_experiment(dataset, output_log, bagging=False):
 
         results.extend(output)
     return results
-    
+
+def compile_experiment_results(input_files, target):
+    """
+    compiles results of experiments by classifier type
+    crawls through each dataset, finds the batch number of its most recent run.
+    filters for most recent batch and finds best result for each classifier
+    """
+    results = []
+    default_header = set()
+    for filename in input_files:
+        with open(filename) as file:
+            csv_reader = csv.reader(file)
+            header = next(csv_reader)
+            default_header.update(header)
+            file.seek(0)
+
+            csv_reader = list(csv.DictReader(file))
+            most_recent_batch_num = csv_reader[-1]["batch_num"]
+
+            most_recent_batch = [i for i in csv_reader if i["batch_num"] == most_recent_batch_num]
+            classifiers_in_batch = list(set([i["classifier"] for i in most_recent_batch]))
+            best_expr_results = [max([i for i in most_recent_batch if i["classifier"] == cls], key=lambda a: a[target]) for cls in classifiers_in_batch]
+
+            for result in best_expr_results:
+                result["filename"] = filename
+
+            results.extend(copy.deepcopy(best_expr_results))
+
+    default_header = sorted(default_header)
+
+    log_experiment(results, "compiled_experiments_results.csv", default_header=list(default_header), overwrite=True, copy_raw=True)
+
 def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
     output_filename = "lxr_nobkg_results.csv"
@@ -563,6 +594,8 @@ def lxr_experiment():
     # svm_experiment(dataset, output_filename)
     # mlp_experiment(dataset, output_filename)
     # logreg_experiment(dataset, output_filename)
+
+    compile_experiment_results([output_filename], "f1")
 
 def smi_to_csv(pos_file, neg_file, output_file):
     data = []
@@ -604,7 +637,7 @@ def remove_unkekulizable(csv_file):
                 data.append(line)
             else:
                 print("removing %s" % line["smiles"])
-    
+
     with open(csv_file, "w+") as file:
         writer = csv.DictWriter(file, headers, "")
         writer.writeheader()
@@ -636,7 +669,7 @@ def compute_fingerprints(dud_raw_files, dud_smile_csv_files, dud_fingerprint_fil
         compute_fingerprints(train_val_test_split, fingerprint_filename, data_target_column='target', data_file=csv_file)
 
 def dud_experiment():
-    dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
+    dud_datasets = ["ace", "ache", "alr2", "ampc", "ar"]
     dud_raw_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset)
         for dataset in dud_datasets]
     dud_smile_csv_files = ["dud/smiles/%s.csv"%dataset for dataset in dud_datasets]
@@ -663,8 +696,10 @@ def dud_experiment():
         # mlp_experiment(dataset, result_filename)
         # logreg_experiment(dataset, result_filename)
 
+    compile_experiment_results(dud_result_files, "f1")
+
 def bagging_experiment(clf, arg, input_filename = "lxr_nobkg_fingerprints.csv"):
-    
+
     column_names = {"fingerprints": "fingerprints", "target": "LXRbeta binder"}
     fingerprints, targets = import_data(input_filename, column_names)
     with open("vecs_zinc.txt") as file:
@@ -676,42 +711,9 @@ def bagging_experiment(clf, arg, input_filename = "lxr_nobkg_fingerprints.csv"):
             fingerprints.append(line.split(" ")[:50])
         targets+[0]*1000
     dataset = (fingerprints, targets)
-    
+
     f1 = bagging(dataset, 50, clf, arg)
     plt.hist(f1, alpha = 0.5)
-
-
-def compile_experiment_results(input_files, target):
-    """
-    compiles results of experiments by classifier type
-    crawls through each dataset, finds the batch number of its most recent run.
-    filters for most recent batch and finds best result for each classifier
-    """
-    results = []
-    default_header = set()
-    for filename in input_files:
-        with open(filename) as file:
-            csv_reader = csv.reader(file)
-            header = next(csv_reader)
-            default_header.update(header)
-            file.seek(0)
-
-            csv_reader = list(csv.DictReader(file))
-            most_recent_batch_num = csv_reader[-1]["batch_num"]
-
-            most_recent_batch = [i for i in csv_reader if i["batch_num"] == most_recent_batch_num]
-            classifiers_in_batch = list(set([i["classifier"] for i in most_recent_batch]))
-            best_expr_results = [max([i for i in most_recent_batch if i["classifier"]==cls], key=lambda a: a[target]) for cls in classifiers_in_batch]
-            
-            for result in best_expr_results:
-                result["filename"] = filename
-
-            results.extend(copy.deepcopy(best_expr_results))
-
-    default_header = sorted(default_header)
-
-    log_experiment(results, "compiled_experiments_results.csv", default_header=list(default_header), overwrite=True, copy_raw=True)
-
 
 if __name__ == "__main__":
     '''
@@ -724,10 +726,5 @@ if __name__ == "__main__":
        "hidden_layer_sizes": 30}
     bagging_experiment(clf, arg)
     '''
-    # top_1000_experiment()
     # lxr_experiment()
     dud_experiment()
-    
-    dud_datasets = ["ace", "ache", "ada", "alr2", "ampc", "ar", "hmga"]
-    input_result_files = ["dud/results/%s.csv" % dataset for dataset in dud_datasets]
-    compile_experiment_results(input_result_files, "f1")
