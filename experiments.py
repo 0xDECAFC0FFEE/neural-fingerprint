@@ -390,7 +390,7 @@ def log_experiment(results, filename, default_header=[], overwrite=False, copy_r
                 log_experiment.batch_number = random.randint(0, 9999)
                 result["batch_num"] = log_experiment.batch_number
 
-    keys_to_add = set(results[0].keys()+default_header)
+    keys_to_add = set(results[0].keys() + default_header) if results else set(default_header)
     result_keys_not_in_header = [key for key in keys_to_add if key not in header]
     result_keys_not_in_header = sorted(result_keys_not_in_header)
 
@@ -551,7 +551,7 @@ def logreg_experiment(dataset, output_log, bagging=False):
         results.extend(output)
     return results
 
-def compile_experiment_results(input_files, target):
+def compile_experiment_results(input_files, target, batch_num=None):
     """
     compiles results of experiments by classifier type
     crawls through each dataset, finds the batch number of its most recent run.
@@ -567,11 +567,13 @@ def compile_experiment_results(input_files, target):
             file.seek(0)
 
             csv_reader = list(csv.DictReader(file))
-            most_recent_batch_num = csv_reader[-1]["batch_num"]
 
-            most_recent_batch = [i for i in csv_reader if i["batch_num"] == most_recent_batch_num]
-            classifiers_in_batch = list(set([i["classifier"] for i in most_recent_batch]))
-            best_expr_results = [max([i for i in most_recent_batch if i["classifier"] == cls], key=lambda a: a[target]) for cls in classifiers_in_batch]
+            if not batch_num:
+                batch_num = csv_reader[-1]["batch_num"]
+
+            cur_batch = [i for i in csv_reader if i["batch_num"] == str(batch_num)]
+            batch_cls = list(set([i["classifier"] for i in cur_batch]))
+            best_expr_results = [max([i for i in cur_batch if i["classifier"] == cls], key=lambda a: a[target]) for cls in batch_cls]
 
             for result in best_expr_results:
                 result["filename"] = filename
@@ -580,7 +582,13 @@ def compile_experiment_results(input_files, target):
 
     default_header = sorted(default_header)
 
-    log_experiment(results, "compiled_experiments_results.csv", default_header=list(default_header), overwrite=True, copy_raw=True)
+    if batch_num:
+        output_file = "compiled_experiment_%s_results.csv" % batch_num
+    else:
+        output_file = "compiled_experiment_results.csv"
+
+    log_experiment(results, output_file, default_header=list(default_header), overwrite=True, copy_raw=True)
+    os.system("open %s" % output_file)
 
 def lxr_experiment():
     input_filename = "lxr_nobkg_fingerprints.csv"
@@ -728,3 +736,4 @@ if __name__ == "__main__":
     '''
     # lxr_experiment()
     dud_experiment()
+    # compile_experiment_results(dud_result_files, "f1")
