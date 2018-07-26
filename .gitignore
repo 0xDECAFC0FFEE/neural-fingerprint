@@ -113,3 +113,5 @@ talks/*.mtc1
 talks/*.out
 talks/*.synctex.gz
 talks/*.brf
+
+*.csv
