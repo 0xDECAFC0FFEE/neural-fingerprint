@@ -69,7 +69,10 @@ class memoize(object):
         return partial(self.__call__, obj)
 
 def normalize_array(A):
+    # print(A)
     mean, std = np.mean(A), np.std(A)
+
+    # print(std)
     A_normed = (A - mean) / std
     def restore_function(X):
         return X * std + mean

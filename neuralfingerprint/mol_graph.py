@@ -9,8 +9,8 @@ class MolGraph(object):
     def __init__(self):
         self.nodes = {} # dict of lists of nodes, keyed by node type
 
-    def new_node(self, ntype, features=None, rdkit_ix=None):
-        new_node = Node(ntype, features, rdkit_ix)
+    def new_node(self, ntype, features=None, rdkit_ix=None, index=None, mol=None):
+        new_node = Node(ntype, features, rdkit_ix, index, mol)
         self.nodes.setdefault(ntype, []).append(new_node)
         return new_node
 
@@ -48,12 +48,14 @@ class MolGraph(object):
                 for self_node in self.nodes[self_ntype]]
 
 class Node(object):
-    __slots__ = ['ntype', 'features', '_neighbors', 'rdkit_ix']
-    def __init__(self, ntype, features, rdkit_ix):
+    __slots__ = ['ntype', 'features', '_neighbors', 'rdkit_ix', 'index', 'mol']
+    def __init__(self, ntype, features, rdkit_ix, index=None, mol=None):
         self.ntype = ntype
         self.features = features
         self._neighbors = []
         self.rdkit_ix = rdkit_ix
+        self.index = index
+        self.mol = mol
 
     def add_neighbors(self, neighbor_list):
         for neighbor in neighbor_list:
@@ -64,13 +66,7 @@ class Node(object):
         return [n for n in self._neighbors if n.ntype == ntype]
 
 def graph_from_smiles_tuple(smiles_tuple):
-    graph_list = []
-    for s in smiles_tuple:
-        try:
-            graph_list.append(graph_from_smiles(s))
-        except:
-            print(s)
-    # graph_list = [graph_from_smiles(s) for s in smiles_tuple]
+    graph_list = [graph_from_smiles(s) for s in smiles_tuple]
     big_graph = MolGraph()
     for subgraph in graph_list:
         big_graph.add_subgraph(subgraph)
@@ -81,16 +77,15 @@ def graph_from_smiles_tuple(smiles_tuple):
 
 def graph_from_smiles(smiles):
     graph = MolGraph()
-    mol = MolFromSmiles(smiles)
+    mol = smiles
+    # mol = MolFromSmiles("Cc1c(O)nc(nn1)SCC(=O)N[C@H](C)c1ccccc1")
+    # mol = MolFromSmiles(smiles)
 
-    # mol = MolFromSmiles(smiles, sanitize=False)
-    # mol.UpdatePropertyCache(strict=False)
-    # Chem.SanitizeMol(mol, Chem.SanitizeFlags.SANITIZE_FINDRADICALS | Chem.SanitizeFlags.SANITIZE_KEKULIZE | Chem.SanitizeFlags.SANITIZE_SETAROMATICITY | Chem.SanitizeFlags.SANITIZE_SETCONJUGATION | Chem.SanitizeFlags.SANITIZE_SETHYBRIDIZATION | Chem.SanitizeFlags.SANITIZE_SYMMRINGS, catchErrors=True)
     if not mol:
         raise ValueError("Could not parse SMILES string:", smiles)
     atoms_by_rd_idx = {}
     for atom in mol.GetAtoms():
-        new_atom_node = graph.new_node('atom', features=atom_features(atom), rdkit_ix=atom.GetIdx())
+        new_atom_node = graph.new_node('atom', features=atom_features(atom), rdkit_ix=atom.GetIdx(), index=atom.index, mol=atom.mol)
         atoms_by_rd_idx[atom.GetIdx()] = new_atom_node
 
     for bond in mol.GetBonds():

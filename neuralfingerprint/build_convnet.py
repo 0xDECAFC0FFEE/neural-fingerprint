@@ -22,9 +22,16 @@ def matmult_neighbors(array_rep, atom_features, bond_features, get_weights):
     for degree in degrees:
         atom_neighbors_list = array_rep[('atom_neighbors', degree)]
         bond_neighbors_list = array_rep[('bond_neighbors', degree)]
+
+        # print(atom_neighbors_list)
+        # print(bond_neighbors_list)
+
         if len(atom_neighbors_list) > 0:
             neighbor_features = [atom_features[atom_neighbors_list],
                                  bond_features[bond_neighbors_list]]
+            
+            # print("neighbor_features", neighbor_features)
+            
             # dims of stacked_neighbors are [atoms, neighbors, atom and bond features]
             stacked_neighbors = np.concatenate(neighbor_features, axis=2)
             summed_neighbors = np.sum(stacked_neighbors, axis=1)
@@ -32,6 +39,10 @@ def matmult_neighbors(array_rep, atom_features, bond_features, get_weights):
             activations_by_degree.append(activations)
     # This operation relies on atoms being sorted by degree,
     # in Node.graph_from_smiles_tuple()
+    # print("activations_by_degree", activations_by_degree)
+
+    # print("output", np.concatenate(activations_by_degree, axis=0))
+
     return np.concatenate(activations_by_degree, axis=0)
 
 def weights_name(layer, degree):
@@ -61,6 +72,9 @@ def build_convnet_fingerprint_fun(num_hidden_features=[100, 100], fp_length=512,
         layer_bias         = parser.get(weights, ("layer", layer, "biases"))
         layer_self_weights = parser.get(weights, ("layer", layer, "self filter"))
         self_activations = np.dot(atom_features, layer_self_weights)
+        # print("array_rep", array_rep)
+        # print("atom_features", atom_features)
+        # print("bond_features", bond_features)
         neighbour_activations = matmult_neighbors(
             array_rep, atom_features, bond_features, get_weights_func)
 
@@ -71,6 +85,12 @@ def build_convnet_fingerprint_fun(num_hidden_features=[100, 100], fp_length=512,
 
     def output_layer_fun_and_atom_activations(weights, smiles):
         """Computes layer-wise convolution, and returns a fixed-size output."""
+
+        # print("smiles shape", smiles.shape)
+        # print("smiles type", type(smiles))
+        # print("smiles", smiles)
+
+        # print("tuple smiles", tuple(smiles))
 
         array_rep = array_rep_from_smiles(tuple(smiles))
         atom_features = array_rep['atom_features']

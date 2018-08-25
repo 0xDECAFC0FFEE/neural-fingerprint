@@ -7,10 +7,13 @@ from neuralfingerprint import build_conv_deep_net
 from neuralfingerprint import normalize_array, adam
 from neuralfingerprint import build_batched_grad
 from neuralfingerprint.util import rmse
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 import csv
 
 from autograd import grad
+
+from hashlib import sha256
 
 model_params = dict(fp_length=50,    # Usually neural fps need far fewer dimensions than morgan.
                     fp_depth=4,      # The depth of the network equals the fingerprint radius.
@@ -54,21 +57,21 @@ def train_nn(pred_fun, loss_fun, num_weights, train_smiles, train_raw_targets, t
                                             train_smiles, train_targets)
 
     # Optimize weights.
+    print("adaming")
     trained_weights = adam(grad_fun_with_data, init_weights, callback=callback,
                            num_iters=train_params['num_iters'], step_size=train_params['step_size'])
+    print("adamed")
 
     def predict_func(new_smiles):
         """Returns to the original units that the raw targets were in."""
         return undo_norm(pred_fun(trained_weights, new_smiles))
     return predict_func, trained_weights, training_curve
 
-
-def compute_fingerprints(train_val_test_split, output_filename, data_file, data_target_column):
-    print "Loading data..."
-    traindata, valdata, _ = load_data(
-        data_file, train_val_test_split, input_name='smiles', target_name=data_target_column)
-    train_inputs, train_targets = traindata
-    val_inputs,   val_targets   = valdata
+def compute_fingerprints(dataset, train_file, test_file):
+    train, val, test = dataset
+    X_train, y_train = train
+    X_val, y_val = val
+    X_test, y_test = test
 
     smiles_to_fps = {}
     conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
@@ -79,27 +82,59 @@ def compute_fingerprints(train_val_test_split, output_filename, data_file, data_
         build_conv_deep_net(conv_arch_params, vanilla_net_params, model_params['L2_reg'])
     num_weights = len(conv_parser)
     predict_func, trained_weights, conv_training_curve = \
-        train_nn(pred_fun, loss_fun, num_weights, train_inputs, train_targets,
-                 train_params, validation_smiles=val_inputs, validation_raw_targets=val_targets)
+        train_nn(pred_fun, loss_fun, num_weights, X_train, y_train,
+                train_params, validation_smiles=X_val, validation_raw_targets=y_val)
 
-    pred_fun(trained_weights, list(train_inputs) + list(val_inputs))
-    # updating weights in smiles_to_fps with final trained weights
+    X_train_val = np.concatenate(X_train, X_val)
+    y_train_val = np.concatenate(y_train, y_val)
 
-    with open(output_filename, "w+") as smiles_fps_file:
-        all_inputs = list(train_inputs) + list(val_inputs)
-        all_targets = list(train_targets) + list(val_targets)
+    pred_fun(trained_weights, X_train_val)
 
-        header = ["smiles", "fingerprints", data_target_column]
-        file_info = [[smile, smiles_to_fps[smile], target] for smile, target in sorted(zip(all_inputs, all_targets))]
-
-        print(sum(all_targets))
-        print(sum([j for i, j in zip(all_inputs, all_targets)]))
-        print(sum([j for i, j in sorted(zip(all_inputs, all_targets))]))
+    with open(train_file, "w+") as smiles_fps_file:
+        header = ["smiles", "fingerprints", "target"]
+        file_info = [[smile.smile, smiles_to_fps[smile], target] for smile, target in zip(X_train_val, y_train_val)]
 
         writer = csv.writer(smiles_fps_file)
         writer.writerow(header)
         for line in file_info:
             writer.writerow(line)
+
+    predict_func(X_test)
+
+    with open(test_file, "w+") as smiles_fps_file:
+        header = ["smiles", "fingerprints", "target"]
+        file_info = [[smile.smile, smiles_to_fps[smile], target] for smile, target in zip(X_test, y_test)]
+
+        writer = csv.writer(smiles_fps_file)
+        writer.writerow(header)
+        for line in file_info:
+            writer.writerow(line)
+
+def distance_multiplier(mol, atom_1_index, atom_2_index):
+    return 1.0/float(mol.distance(atom_1_index, atom_2_index))
+
+def compute_neighbor_multipliers(mol):
+    distance_mapping = {}
+    for atom_1 in len(mol.atoms):
+        distance_mapping[atom_1] = {}
+
+        for atom_2 in len(mol.atoms):
+            if atom_1 == atom_2:
+                continue
+            if mol.distance(atom_1, atom_2) > 3:
+                continue
+            
+            distance_mapping[atom_1][atom_2] = distance_multiplier(mol, atom_1, atom_2)
+    
+    return distance_mapping
+
+            
+def atom_symbol_to_num(symbol):
+    # expecting symbol like "O", "CL", "he", or "Fr". 
+
+    normalized_symbol = symbol.strip().title()
+    
+    return float(int(sha256(normalized_symbol.encode('utf-8')).hexdigest(), 16) % 100000)
 
 def interpolate_fingerprints(train_val_test_split, output_filename, example_file, example_target_column, target_filename):
     print "Loading data..."
