@@ -7,6 +7,7 @@ def smiles_to_fps(data, fp_length, fp_radius):
 
 def smile_to_fp(s, fp_length, fp_radius):
     m = Chem.MolFromSmiles(s)
+    # print(m)
     return (AllChem.GetMorganFingerprintAsBitVect(
         m, fp_radius, nBits=fp_length)).ToBitString()
 

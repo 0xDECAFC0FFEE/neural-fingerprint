@@ -20,14 +20,14 @@ def collect_test_losses(num_folds):
                 with open(fname) as f:
                     results[net_type].append(pickle.load(f))
             except IOError:
-                print "Couldn't find file {0}".format(fname)
+                print("Couldn't find file %s" % fname)
 
-    print "Results are:"
-    print results
-    print "Means:"
-    print {k : np.mean(v) for k, v in results.iteritems()}
-    print "Std errors:"
-    print {k : np.std(v) / np.sqrt(len(v) - 1) for k, v in results.iteritems()}
+    print("Results are:")
+    print(results)
+    print("Means:")
+    print({k : np.mean(v) for k, v in results.iteritems()})
+    print("Std errors:")
+    print({k : np.std(v) / np.sqrt(len(v) - 1) for k, v in results.iteritems()})
 
 def record_loss(loss, expt_ix, net_type):
     fname = "Final_test_loss_{0}_{1}.pkl.save".format(expt_ix, net_type)
@@ -69,7 +69,10 @@ class memoize(object):
         return partial(self.__call__, obj)
 
 def normalize_array(A):
+    # print(A)
     mean, std = np.mean(A), np.std(A)
+
+    # print(std)
     A_normed = (A - mean) / std
     def restore_function(X):
         return X * std + mean
@@ -78,11 +81,11 @@ def normalize_array(A):
 
 @contextmanager
 def tictoc():
-    print "--- Start clock ---"
+    print("--- Start clock ---")
     t1 = time()
     yield
     dt = time() - t1
-    print "--- Stop clock: %s seconds elapsed ---" % dt
+    print("--- Stop clock: %s seconds elapsed ---" % dt)
 
 class WeightsParser(object):
     """A kind of dictionary of weights shapes,
@@ -113,13 +116,13 @@ class WeightsParser(object):
 def one_of_k_encoding(x, allowable_set):
     if x not in allowable_set:
         raise Exception("input {0} not in allowable set{1}:".format(x, allowable_set))
-    return map(lambda s: x == s, allowable_set)
+    return list(map(lambda s: x == s, allowable_set))
 
 def one_of_k_encoding_unk(x, allowable_set):
     """Maps inputs not in the allowable set to the last element."""
     if x not in allowable_set:
         x = allowable_set[-1]
-    return map(lambda s: x == s, allowable_set)
+    return list(map(lambda s: x == s, allowable_set))
 
 def dropout(weights, fraction, random_state):
     """Randomly sets fraction of weights to zero, and increases the rest
@@ -132,12 +135,14 @@ def get_ith_minibatch_ixs(i, num_datapoints, batch_size):
     i = i % num_minibatches
     start = i * batch_size
     stop = start + batch_size
-    return slice(start, stop)
+    return slice(int(start), int(stop))
 
 def build_batched_grad(grad, batch_size, inputs, targets):
     """Grad has signature(weights, inputs, targets)."""
     def batched_grad(weights, i):
         cur_idxs = get_ith_minibatch_ixs(i, len(targets), batch_size)
+        print("len cur idxs", cur_idxs.stop-cur_idxs.start)
+        print("input length", len(inputs), "final idx index", cur_idxs.stop)
         return grad(weights, inputs[cur_idxs], targets[cur_idxs])
     return batched_grad
 

@@ -104,6 +104,7 @@ def build_fingerprint_deep_net(net_params, fingerprint_func, fp_parser, fp_l2_pe
         return fingerprint_weights, net_weights
 
     def loss_fun(weights, smiles, targets):
+        print("len smiles", len(smiles))
         fingerprint_weights, net_weights = unpack_weights(weights)
         fingerprints = fingerprint_func(fingerprint_weights, smiles)
         net_loss = net_loss_fun(net_weights, fingerprints, targets)
