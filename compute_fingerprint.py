@@ -71,24 +71,18 @@ def train_nn(pred_fun, loss_fun, num_weights, train_smiles, train_raw_targets, t
         return undo_norm(pred_fun(trained_weights, new_smiles))
     return predict_func, trained_weights, training_curve
 
-def compute_fingerprints(dataset, train_file, test_file):
+def compute_fingerprints(dataset, train_file, test_file, learning_rate):
     train, val, test = dataset
     X_train, y_train = train
     X_val, y_val = val
     X_test, y_test = test
 
-    # X_train_test = np.concatenate((X_train, X_test))
-    # y_train_test = np.concatenate((y_train, y_test))
-    
     X_train_val = np.concatenate((X_train, X_val))
     y_train_val = np.concatenate((y_train, y_val))
-
-    # X_train_val_test = np.concatenate((X_train_val, X_test))
-    # y_train_val_test = np.concatenate((y_train_val, y_test))
-
-
+    
     global train_params
-    train_params["num_iters"] = int(len(X_train)/train_params["batch_size"])
+    # train_params["num_iters"] = int(len(X_train)/train_params["batch_size"])
+    train_params["step_size"] = learning_rate
 
     smiles_to_fps = {}
     conv_layer_sizes = [model_params['conv_width']] * model_params['fp_depth']
@@ -97,16 +91,10 @@ def compute_fingerprints(dataset, train_file, test_file):
                         'normalize' : 1,
                         'smiles_to_fps': smiles_to_fps}
 
-    print("building neural net")
-
     loss_fun, pred_fun, conv_parser = build_conv_deep_net(conv_arch_params, vanilla_net_params, model_params['L2_reg'])
     num_weights = len(conv_parser)
 
-    print("training neural net")
-
     predict_func, trained_weights, conv_training_curve = train_nn(pred_fun, loss_fun, num_weights, X_train, y_train, train_params, validation_smiles=X_val, validation_raw_targets=y_val)
-
-    print("computing test set")
 
     pred_fun(trained_weights, X_train_val)
 

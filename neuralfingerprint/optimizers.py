@@ -30,9 +30,7 @@ def adam(grad, x, callback=None, num_iters=100,
     m = np.zeros(len(x))
     v = np.zeros(len(x))
     for i in range(num_iters):
-        print("adam gradding")
         g = grad(x, i)
-        print("adam gradded")
         if callback: callback(x, i)
         m = (1 - b1) * g      + b1 * m  # First  moment estimate.
         v = (1 - b2) * (g**2) + b2 * v  # Second moment estimate.

@@ -115,3 +115,8 @@ talks/*.synctex.gz
 talks/*.brf
 
 *.csv
+*.bs
+*.crk3d
+anaconda_instructions
+*.png
+*.smi
