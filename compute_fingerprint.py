@@ -3,7 +3,6 @@ import autograd.numpy as np
 import autograd.numpy.random as npr
 
 from neuralfingerprint import load_data
-from neuralfingerprint import build_morgan_deep_net
 from neuralfingerprint import build_conv_deep_net
 from neuralfingerprint import normalize_array, adam
 from neuralfingerprint import build_batched_grad
@@ -108,7 +107,6 @@ def compute_fingerprints(dataset, train_file, test_file, learning_rate):
             writer.writerow(line)
 
     predict_func(X_test)
-
     with open(test_file, "w+") as smiles_fps_file:
         header = ["smiles", "fingerprints", "target"]
         file_info = [[smile, smiles_to_fps[smile], target] for smile, target in zip(X_test, y_test)]
@@ -117,44 +115,3 @@ def compute_fingerprints(dataset, train_file, test_file, learning_rate):
         writer.writerow(header)
         for line in file_info:
             writer.writerow(line)
-
-def distance_multiplier(mol, atom_1_index, atom_2_index):
-    return 1.0/float(mol.distance(atom_1_index, atom_2_index))
-
-def compute_neighbor_multipliers(mol):
-    distance_mapping = {}
-    for atom_1 in len(mol.atoms):
-        distance_mapping[atom_1] = {}
-
-        for atom_2 in len(mol.atoms):
-            if atom_1 == atom_2:
-                continue
-            if mol.distance(atom_1, atom_2) > 3:
-                continue
-            
-            distance_mapping[atom_1][atom_2] = distance_multiplier(mol, atom_1, atom_2)
-    
-    return distance_mapping
-
-            
-def atom_symbol_to_num(symbol):
-    # expecting symbol like "O", "CL", "he", or "Fr". 
-
-    normalized_symbol = symbol.strip().title()
-    
-    return float(int(sha256(normalized_symbol.encode('utf-8')).hexdigest(), 16) % 100000)
-
-if __name__ == '__main__':
-    # compute_fingerprints(
-    #     train_val_test_split=(95, 45, 0),
-    #     data_file='lxr_nobkg.csv',
-    #     data_target_column='LXRbeta binder',
-    #     output_filename='lxr_nobkg_fingerprints.csv'
-    # )
-    interpolate_fingerprints(
-        train_val_test_split=(95, 45, 0),
-        output_filename='top1000_rf_fingerprints.csv',
-        example_file='lxr_nobkg.csv',
-        example_target_column='LXRbeta binder',
-        target_filename='top1000_rf_smiles.csv'
-    )

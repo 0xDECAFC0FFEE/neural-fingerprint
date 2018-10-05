@@ -142,6 +142,8 @@ def build_batched_grad(grad, batch_size, inputs, targets):
     def batched_grad(weights, i):
         cur_idxs = get_ith_minibatch_ixs(i, len(targets), len(targets))
         # cur_idxs = get_ith_minibatch_ixs(i, len(targets), batch_size)
+        # batches were too small so we had them run over the entire dataset each time. ended up dramatically 
+        # increasing overall scores significantly on the test set. alexa play voodoo\ magic.wav
         return grad(weights, inputs[cur_idxs], targets[cur_idxs])
     return batched_grad
 

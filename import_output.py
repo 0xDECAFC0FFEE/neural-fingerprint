@@ -6,6 +6,13 @@ import time
 import copy
 import os
 
+batch_num = None
+def get_batch_num():
+    global batch_num
+    if batch_num == None:
+        batch_num = random.randint(0, 99999999)
+    return batch_num
+
 def import_random_data(random_data_filename, dataset):
     if random_data_filename:
         fingerprints, targets = dataset
@@ -100,7 +107,7 @@ def log_experiment(results, filename, default_header=[], overwrite=False, copy_r
             header = next(csv_reader)
             log_file.seek(0)
             data = csv.DictReader(log_file)
-            data = [defaultdict(lambda: "", line) for line in data]
+            data = [defaultdict(lambda: "", line) for line in data] # turned lines into defaultdicts to allow empty csv file cells
         except:
             header = []
             data = []
@@ -110,12 +117,8 @@ def log_experiment(results, filename, default_header=[], overwrite=False, copy_r
     if not copy_raw:
         for line in results:
             line["timestamp"] = time.strftime("%I:%M %m-%d")
-            try:
-                line["batch_num"] = log_experiment.batch_number
-            except:
-                log_experiment.batch_number = random.randint(0, 99999999)
-                line["batch_num"] = log_experiment.batch_number
-
+            line["batch_num"] = get_batch_num()
+            
     keys_in_results = (list(results[0].keys()) + default_header) if results else list(default_header)
 
     header = sorted(set(list(header) + keys_in_results))
@@ -205,12 +208,9 @@ def compile_experiment_results(input_files, target, default_batch_num=None):
 
 
 def plot(scores, exp_id):
-    print(scores)
     import matplotlib
     import matplotlib.pyplot as plt
     import itertools
-
-    # matplotlib.rc("font", size=20)
 
     xs, ys = defaultdict(lambda:[]), defaultdict(lambda:[])
     avg_xs, avg_ys = defaultdict(lambda:[]), defaultdict(lambda:[])
@@ -221,8 +221,9 @@ def plot(scores, exp_id):
             xs[clf_name].extend(["%s-%s" % (clf_name, dataset)]*len(data))
             ys[clf_name].extend(data)
 
-            avg_xs[clf_name].append("%s-%s" % (clf_name, dataset))
-            avg_ys[clf_name].append(sum(data)/float(len(data)))
+            if len(data) != 0:
+                avg_xs[clf_name].append("%s-%s" % (clf_name, dataset))
+                avg_ys[clf_name].append(sum(data)/float(len(data)))
 
             x_axis_labels.extend([dataset])
 
@@ -235,19 +236,14 @@ def plot(scores, exp_id):
         plt.scatter(avg_xs[clf], avg_ys[clf], color="black", marker="x")
 
     plt.legend(list(xs)+["average roc score"])
-
     plt.ylabel('ROC score')
-
     plt.xticks(range(20), x_axis_labels, rotation=-40)
 
     title = 'experiment %s' % exp_id
     plt.title(title)
-
     plt.rcParams["figure.figsize"] = (20,3)
 
     with open(title+".png", "w+b") as file:
         plt.savefig(file, dpi=200)
 
     plt.show()
-    
-    # os.system("open '%s.png'" % title)

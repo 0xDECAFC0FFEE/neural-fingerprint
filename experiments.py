@@ -265,8 +265,6 @@ def lxr_experiment():
 	mlp_experiment(dataset, output_filename)
 	logreg_experiment(dataset, output_filename)
 
-	compile_experiment_results([output_filename], "f1")
-
 def compute_fingerprints_wrapper(folds, cv1_trains_tests_lrs, dud_parsed_crk3d):
     cv1_trains, cv1_tests, lrs = cv1_trains_tests_lrs
     
@@ -297,37 +295,38 @@ def compute_fingerprints_wrapper(folds, cv1_trains_tests_lrs, dud_parsed_crk3d):
             compute_fingerprints(dataset, train_file, test_file, learning_rate)
 
 def dud_experiment(recompute_csv=True, recompute_fingerprints=True):
-    dud_datasets = ["ace", "ache", "alr2", "ampc", "ar"]
+    datasets = ["ace", "ache", "alr2", "ampc", "ar"]
 
     learning_rates = defaultdict(lambda:np.exp(-6))
-    learning_rates = [learning_rates[dataset] for dataset in dud_datasets]
+    learning_rates = [learning_rates[dataset] for dataset in datasets]
 
-    dud_raw_smile_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset) for dataset in dud_datasets]
-    dud_smile_csv = ["dud/smiles/%s.csv" % dataset for dataset in dud_datasets]
-    dud_parsed_csv = []
-    dud_result_files = make_files(folder="dud/results", filenames=[i + ".csv" for i in dud_datasets])
+    raw_smile_files = [("dud/%s_actives.smi" % dataset, "dud/%s_background.smi" % dataset) for dataset in datasets]
+    csv_smile_files = ["dud/smiles/%s.csv" % dataset for dataset in datasets]
+    parsed_csv_files = []
+    experiment_result_files = make_files(folder=["dud","results"], filenames=[i + ".csv" for i in datasets])
     
-    for raw, smile_csv_filename in zip(dud_raw_smile_files, dud_smile_csv):
+    for raw_smile_filename, smile_csv_filename in zip(raw_smile_files, csv_smile_files):
         if recompute_csv:
-            compute_csv_files(raw, smile_csv_filename)
+            raw_to_csv_files(raw_smile_filename, smile_csv_filename)
         with open(smile_csv_filename) as smile_csv:
-            dud_parsed_csv.append(read_csv(smile_csv_filename, len(list(csv.DictReader(smile_csv))), "smiles", "target"))
+            num_smiles = len(list(csv.DictReader(smile_csv)))
+            parsed_csv_files.append(read_csv(smile_csv_filename, num_smiles, "smiles", "target"))
 
     cv1_folds=3
     fingerprint_train_all_dataset, fingerprint_test_all_dataset = [], []
 
-    for dataset in dud_datasets:
+    for dataset in datasets:
+        fingerprint_train_dataset, fingerprint_test_dataset = [], []
         for fold_num in range(cv1_folds):
-            make_files(folder="dud/fingerprint/"+dataset+"/"+str(fold_num))
-        fingerprint_train_dataset = make_files(filenames=[("dud/fingerprint/" + dataset + "/cv_" + str(fold_num) + "/train.csv") for fold_num in range(cv1_folds)])
-        fingerprint_test_dataset = make_files(filenames=[("dud/fingerprint/" + dataset + "/cv_" + str(fold_num) + "/test.csv") for fold_num in range(cv1_folds)])
+            fingerprint_train_dataset.append(make_files(folder=["dud", "fingerprint", dataset, "cv_" + str(fold_num)], filenames=["train.csv"])[0])
+            fingerprint_test_dataset.append(make_files(folder=["dud", "fingerprint", dataset, "cv_" + str(fold_num)], filenames=["test.csv"])[0])
         fingerprint_train_all_dataset.append(fingerprint_train_dataset)
         fingerprint_test_all_dataset.append(fingerprint_test_dataset)
 
     if recompute_fingerprints:
-        compute_fingerprints_wrapper(cv1_folds, (fingerprint_train_all_dataset, fingerprint_test_all_dataset, learning_rates), dud_parsed_csv)
+        compute_fingerprints_wrapper(cv1_folds, (fingerprint_train_all_dataset, fingerprint_test_all_dataset, learning_rates), parsed_csv_files)
 
-    for fingerprint_train_dataset, fingerprint_test_dataset, result_filename in zip(fingerprint_train_all_dataset, fingerprint_test_all_dataset, dud_result_files):
+    for fingerprint_train_dataset, fingerprint_test_dataset, result_filename in zip(fingerprint_train_all_dataset, fingerprint_test_all_dataset, experiment_result_files):
         print("%s -> %s" % (fingerprint_train_dataset, result_filename))
 
         column_names = {"fingerprints": "fingerprints", "target": "target"}
@@ -344,8 +343,8 @@ def dud_experiment(recompute_csv=True, recompute_fingerprints=True):
         mlp_experiment(cv1_datasets, result_filename, cv1_folds)
         logreg_experiment(cv1_datasets, result_filename, cv1_folds)
 
-    compile_experiment_results(dud_result_files, "roc", default_batch_num=None)
+    compile_experiment_results(experiment_result_files, "roc", default_batch_num=get_batch_num())
 
 if __name__ == "__main__":
     # lxr_experiment()
-    dud_experiment(recompute_csv=False, recompute_fingerprints=False)
+    dud_experiment(recompute_csv=False, recompute_fingerprints=True)

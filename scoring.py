@@ -24,6 +24,7 @@ def interpret_score(pred_y_proba, test_y, validation_weights=None, show_roc=Fals
     FN = sum([1 for test, pred in zip(test_y, pred_y_class) if test != pred and pred == 0])
     accuracy = float(TP+TN) / float(TP+FP+TN+FN)
 
+    print("%s predicted true samples" % TP)
     f1 = f1_score(test_y, pred_y_class, sample_weight=validation_weights)
 
     roc = roc_auc_score(test_y, pred_y_pos)

@@ -23,18 +23,19 @@ def smi_to_csv(pos_file, neg_file, output_file):
         csv_writer.writeheader()
         csv_writer.writerows(data)
 
-def make_files(folder=None, filenames=[]):
+def make_files(folder=[], filenames=[]):
     if folder:
-        try:
-            os.makedirs(folder)
-        except:
-            pass
-        filenames = ["%s%s%s" % (folder, os.sep, fn) for fn in filenames]
-        for filename in filenames:
-            open(filename, "a+").close()
-    else:
-        for filename in filenames:
-            open(filename, "a+").close()
+        path = folder[0]
+        for path_folder in folder[1:]:
+            path = "%s%s%s" % (path, os.sep, path_folder)
+            try:
+                os.makedirs(path)
+            except:
+                pass
+        filenames = ["%s%s%s" % (path, os.sep, filename) for filename in filenames]
+
+    for filename in filenames:
+        open(filename, "a+").close()
     
     return filenames
 
@@ -130,7 +131,7 @@ def parse_crk3d_file(filename):
 
     return molecules
 
-def compute_csv_files(raw_files, csv_file):
+def raw_to_csv_files(raw_files, csv_file):
     active_file, background_file = raw_files
     smi_to_csv(active_file, background_file, csv_file)
     remove_unkekulizable(csv_file)
